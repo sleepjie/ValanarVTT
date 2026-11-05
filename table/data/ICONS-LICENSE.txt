@@ -1,0 +1,20 @@
+The pictures in gameicons.js come from game-icons.net (https://game-icons.net), by
+  badges: 3 icons
+  carl-olsen: 3 icons
+  caro-asercion: 2 icons
+  cathelineau: 1 icons
+  darkzaitzev: 1 icons
+  delapouite: 129 icons
+  faithtoken: 1 icons
+  felbrigg: 1 icons
+  john-colburn: 1 icons
+  lorc: 207 icons
+  lucasms: 3 icons
+  pierre-leducq: 2 icons
+  sbed: 5 icons
+  seregacthtuf: 1 icons
+  skoll: 14 icons
+  willdabeast: 3 icons
+  zeromancer: 1 icons
+and are available under the Creative Commons Attribution 3.0 Unported licence
+(https://creativecommons.org/licenses/by/3.0/). They are used unchanged apart from colour.

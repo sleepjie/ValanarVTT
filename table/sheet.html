@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="only light">
+<title>Character sheet</title>
+<link rel="stylesheet" href="/table/sheetbase.css">
+</head>
+<body class="sheetpage">
+<header id="sheetbar">
+  <span id="avatar" class="av"></span>
+  <b id="charName">Character</b>
+  <span id="sheetKind" class="muted small"></span>
+  <span class="spacer"></span>
+  <span id="readonly" class="muted small" hidden>Read only</span>
+  <span id="conn" class="conn" title="Connection"></span>
+  <button id="nightBtn" class="chip sm" title="Night mode on or off">☾</button>
+  <button id="popout" class="chip sm" hidden title="Open in its own window">Pop out</button>
+</header>
+<div id="sheetwrap"><div id="sheet"><p class="muted" style="padding:20px">Loading the sheet…</p></div></div>
+<div id="modal" hidden></div>
+<div id="toasts"></div>
+<script src="/table/shared/r20roll.js"></script>
+<script src="/table/js/core.js"></script>
+<script src="/table/js/sheetrt.js"></script>
+<script src="/table/js/sheetpage.js"></script>
+</body>
+</html>

@@ -1,0 +1,184 @@
+/* 2D6 character sheet: parchment and ink, after the printed sheet. Roll20 format: every class is sheet-*. */
+.sheet-2d6 {
+  --ink: #241d15; --ink-2: #5b4f40; --paper: #f4ecdc; --paper-2: #ebe0c8; --paper-3: #fffaf0; --line: #2b241c; --soft: #b9a888; --red: #7a1f12;
+  font-family: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif; font-size: 13.5px; line-height: 1.35; color: var(--ink);
+  background: var(--paper) radial-gradient(ellipse at 30% 10%, rgba(255,255,255,0.55), transparent 60%);
+  margin: -10px; padding: 10px 12px 24px; min-height: calc(100vh - 20px);
+}
+.sheet-2d6 * { box-sizing: border-box; }
+.sheet-2d6 input[type=text], .sheet-2d6 input[type=number], .sheet-2d6 select, .sheet-2d6 textarea {
+  width: 100%; height: 26px; font: inherit; font-size: 13px; color: var(--ink); background: var(--paper-3);
+  border: 1px solid var(--soft); border-radius: 3px; padding: 2px 5px; }
+.sheet-2d6 textarea { height: 70px; resize: vertical; line-height: 1.35; padding: 4px 6px; }
+.sheet-2d6 textarea.sheet-tall { height: 110px; }
+.sheet-2d6 textarea.sheet-xtall { height: 320px; }
+.sheet-2d6 input[readonly] { background: transparent; border-color: transparent; font-weight: bold; text-align: center; }
+.sheet-2d6 input[type=number] { text-align: center; }
+.sheet-2d6 button { font-family: inherit; }
+
+/* top bar and tabs */
+.sheet-topbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 4px 2px 10px; border-bottom: 2px solid var(--line); margin-bottom: 8px; }
+.sheet-brand { font: bold 20px/1 "Palatino Linotype", Georgia, serif; letter-spacing: 0.04em; color: var(--red); }
+.sheet-mode { display: flex; align-items: center; gap: 6px; font-variant: small-caps; font-weight: bold; }
+.sheet-mode select { width: auto !important; }
+.sheet-check { display: inline-flex !important; align-items: center; gap: 5px; cursor: pointer; }
+.sheet-tabs { position: relative; }
+.sheet-tab { position: relative; z-index: 2; opacity: 0; width: 120px; height: 28px; margin: 0 -120px 0 0 !important; cursor: pointer; vertical-align: top; }
+.sheet-tablabel { display: inline-block; width: 120px; height: 28px; line-height: 26px; text-align: center; margin-right: 6px; border: 2px solid var(--line); border-bottom: 0;
+  border-radius: 6px 6px 0 0; background: var(--paper-2); font-variant: small-caps; font-weight: bold; vertical-align: top; }
+.sheet-tab:checked + .sheet-tablabel { background: var(--line); color: var(--paper); }
+.sheet-page { display: none; border-top: 2px solid var(--line); padding-top: 10px; }
+.sheet-t1:checked ~ .sheet-p1, .sheet-t2:checked ~ .sheet-p2, .sheet-t3:checked ~ .sheet-p3 { display: block; }
+
+/* boxes with notched corners */
+.sheet-box { position: relative; border: 2px solid var(--line); border-radius: 8px; background: rgba(255, 250, 240, 0.35); margin-bottom: 10px; box-shadow: inset 0 0 0 2px var(--paper), inset 0 0 0 3px rgba(43, 36, 28, 0.55); }
+.sheet-h { font-variant: small-caps; font-weight: bold; font-size: 15px; letter-spacing: 0.03em; padding: 5px 10px 2px; }
+.sheet-h:empty { display: none; }
+.sheet-b { padding: 4px 10px 10px; }
+.sheet-h2 { font-variant: small-caps; font-weight: bold; font-size: 14px; margin: 8px 0 3px; border-bottom: 1px solid var(--line); }
+.sheet-note { font-size: 12px; color: var(--ink-2); font-style: italic; margin: 6px 0 0; }
+.sheet-small { font-size: 12px; color: var(--ink-2); }
+.sheet-f { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
+.sheet-f > span { font-size: 11.5px; font-weight: bold; color: var(--ink-2); }
+.sheet-wide { grid-column: 1 / -1; }
+.sheet-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.sheet-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 8px; }
+
+/* layout */
+.sheet-row1 { display: grid; grid-template-columns: 1.05fr 1.1fr 1.5fr 0.8fr; gap: 0 10px; align-items: start; }
+.sheet-row2 { display: grid; grid-template-columns: minmax(400px, 0.95fr) minmax(0, 1.1fr); gap: 0 10px; align-items: start; }
+.sheet-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; align-items: start; }
+.sheet-vitalsrow { grid-template-columns: 1.2fr 1fr; }
+@media (max-width: 980px) {
+  .sheet-row1 { grid-template-columns: 1fr 1fr; }
+  .sheet-row2 { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .sheet-row1, .sheet-pair, .sheet-vitalsrow { grid-template-columns: 1fr; }
+  .sheet-grid3 { grid-template-columns: 1fr 1fr; }
+}
+
+/* pips: radios drawn right to left so that the chosen one and those before it fill in */
+.sheet-pip { appearance: none; -webkit-appearance: none; width: 15px; height: 15px; margin: 0 1px !important; border: 2px solid var(--line); border-radius: 50%;
+  background: var(--paper-3); cursor: pointer; vertical-align: middle; flex: none; }
+.sheet-pip:checked { background: var(--line); box-shadow: inset 0 0 0 2px var(--paper-3); }
+.sheet-pip.sheet-fail:checked { background: var(--red); }
+.sheet-pips { display: inline-flex; flex-direction: row-reverse; justify-content: flex-end; align-items: center; }
+.sheet-pips .sheet-pip:checked ~ .sheet-pip:not(.sheet-zero) { background: var(--line); box-shadow: inset 0 0 0 2px var(--paper-3); }
+.sheet-pips .sheet-zero { width: 11px; height: 11px; border-width: 1px; border-style: dashed; margin-right: 4px !important; opacity: 0.6; }
+.sheet-pips .sheet-zero:checked { background: transparent; box-shadow: none; opacity: 1; }
+
+/* details and attributes */
+.sheet-levelrow { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.sheet-levelrow > span { font-size: 11.5px; font-weight: bold; color: var(--ink-2); }
+.sheet-xprow { display: flex; align-items: flex-end; gap: 8px; }
+.sheet-xprow .sheet-f { width: 90px; }
+.sheet-attr { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+.sheet-attrbtn { width: 48px; height: 24px; border: 2px solid var(--line); border-radius: 4px; background: var(--line); color: var(--paper); font-weight: bold; font-size: 13px; cursor: pointer; padding: 0; }
+.sheet-attrbtn:hover { background: var(--red); border-color: var(--red); }
+.sheet-attrnote { font-size: 11px; color: var(--red); }
+.sheet-attrfoot { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.sheet-minibtn { height: 24px; padding: 0 9px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper-2); color: var(--ink); font-size: 12px; font-weight: bold; cursor: pointer; white-space: nowrap; }
+.sheet-minibtn:hover { background: var(--line); color: var(--paper); }
+.sheet-hints { font-size: 12px; color: var(--ink-2); font-style: italic; margin: 2px 0 4px; display: flex; flex-direction: column; }
+.sheet-hints span:empty { display: none; }
+.sheet-thin input { height: 22px !important; }
+.sheet-portrait { display: flex; flex-direction: column; gap: 4px; }
+.sheet-portrait img { width: 100%; aspect-ratio: 1; object-fit: cover; border: 1px solid var(--soft); border-radius: 4px; background: var(--paper-2); }
+.sheet-portrait img[hidden] { display: block !important; content: ''; }
+.sheet-porturl { font-size: 11px !important; height: 22px !important; }
+
+/* skills */
+.sheet-skillcols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
+.sheet-cat { font-style: italic; font-weight: bold; font-size: 14px; margin: 6px 0 1px; }
+.sheet-cat:first-child { margin-top: 0; }
+.sheet-skill { display: flex; align-items: center; gap: 3px; min-height: 21px; }
+.sheet-skillbtn { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 0 2px; font-size: 13px; color: var(--ink); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-skillbtn:hover { color: var(--red); text-decoration: underline; }
+.sheet-attrsel { width: 44px !important; height: 19px !important; padding: 0 1px !important; font-size: 10px !important; flex: none; }
+.sheet-attrfix { width: 44px; text-align: center; font-size: 10px; color: var(--ink-2); flex: none; }
+.sheet-mod { width: 24px; text-align: right; font-weight: bold; font-size: 12px; flex: none; }
+.sheet-profrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
+.sheet-profrow label { display: inline-flex; flex-direction: column; align-items: center; font-size: 10px; font-weight: bold; cursor: pointer; }
+.sheet-proflabel { font-variant: small-caps; font-weight: bold; font-size: 12px; margin-left: 4px; }
+.sheet-customs { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 4px; }
+.sheet-custom { display: flex; align-items: center; gap: 4px; margin: 3px 0; }
+.sheet-custom input[type=text] { height: 22px; font-style: italic; }
+.sheet-sdic { display: inline-flex; flex-direction: column; align-items: center; font-size: 9px; font-weight: bold; }
+.sheet-sdic input { margin: 0 !important; width: 12px; height: 12px; }
+
+/* equipment */
+.sheet-thead { font-weight: bold; font-size: 12px; border-bottom: 1px solid var(--line); padding-bottom: 2px; margin-bottom: 3px; }
+.sheet-wpn { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1.6fr; gap: 3px; align-items: center; margin-bottom: 5px; }
+.sheet-wpn2 { display: grid; grid-template-columns: 0.9fr 0.7fr 1.1fr auto; gap: 3px; align-items: center; }
+.sheet-wpn2 > span.sheet-lab { font-size: 11px; font-weight: bold; color: var(--ink-2); }
+.repcontainer[data-groupname=repeating_weapons] .repitem { padding-bottom: 5px; margin-bottom: 5px; border-bottom: 1px dotted var(--soft); }
+.sheet-btns { display: inline-flex; gap: 3px; }
+/* health */
+.sheet-hp { display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; gap: 6px; }
+.sheet-hp2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+.sheet-hpcell { display: flex; flex-direction: column; }
+.sheet-hpcell > span { font-weight: bold; font-size: 13px; }
+.sheet-hpcell input { height: 32px !important; font-size: 18px !important; font-weight: bold; }
+.sheet-heart { font-size: 40px; line-height: 40px; color: var(--line); text-align: center; }
+.sheet-tn input { color: var(--red); }
+.sheet-adjust { margin-top: 8px; font-size: 12.5px; }
+.sheet-adjust summary { cursor: pointer; font-weight: bold; color: var(--ink-2); }
+.sheet-adjust .sheet-grid2 { margin-top: 6px; }
+.sheet-death { display: flex; flex-direction: column; gap: 4px; }
+.sheet-dc { display: flex; align-items: center; gap: 4px; }
+.sheet-dc > span { width: 46px; font-size: 12px; font-weight: bold; font-variant: small-caps; }
+.sheet-dc input[type=text] { height: 22px; }
+.sheet-lang textarea { height: 90px; }
+.sheet-deathbox .sheet-b { padding-top: 8px; }
+
+/* feats */
+.sheet-feat { display: grid; grid-template-columns: 1fr 120px; gap: 3px; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px dotted var(--soft); }
+.sheet-feat textarea { grid-column: 1 / -1; height: 48px; }
+
+/* inventory */
+.sheet-inv { display: grid; grid-template-columns: 1fr 70px 56px; gap: 3px; margin-bottom: 3px; }
+.sheet-inv2 { display: grid; grid-template-columns: 1fr 90px; gap: 3px; margin-bottom: 3px; }
+.sheet-invtotal { text-align: right; margin: 6px 0; font-size: 12.5px; }
+.sheet-coins { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 6px; }
+.sheet-coins label { display: flex; align-items: center; gap: 4px; font-weight: bold; }
+
+/* spells */
+.sheet-sp { display: grid; grid-template-columns: 110px 110px 1fr 90px; gap: 6px 10px; align-items: end; margin-bottom: 10px; }
+.sheet-sp .sheet-check { grid-column: span 2; }
+.sheet-spl { display: grid; grid-template-columns: 1.3fr 1fr 0.8fr 48px 0.7fr 2fr 1fr auto; gap: 3px; align-items: start; margin-bottom: 4px; }
+.sheet-spl textarea { height: 52px; }
+.sheet-scal { display: flex; flex-direction: column; gap: 2px; }
+.sheet-scal label { display: flex; align-items: center; gap: 3px; font-size: 11px; font-weight: bold; }
+.sheet-scal label input { height: 22px; }
+@media (max-width: 760px) { .sheet-spl { grid-template-columns: 1fr 1fr 1fr; } .sheet-thead.sheet-spl { display: none; } .sheet-sp { grid-template-columns: 1fr 1fr; } }
+
+/* repeating sections (the table adds the buttons) */
+.sheet-2d6 .repcontrol .btn { background: var(--paper-2); border-color: var(--line); color: var(--ink); font-family: inherit; }
+
+/* ───────── the roll card in the chat ───────── */
+.sheet-rolltemplate-2d6 .sheet-rt { font-family: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif; color: #241d15; background: #f4ecdc; border: 2px solid #2b241c;
+  border-radius: 7px; box-shadow: inset 0 0 0 2px #f4ecdc, inset 0 0 0 3px rgba(43,36,28,0.5); overflow: hidden; }
+.sheet-rolltemplate-2d6 .sheet-rt-head { padding: 6px 10px 4px; border-bottom: 1px solid #2b241c; background: #ebe0c8; }
+.sheet-rolltemplate-2d6 .sheet-rt-name { font-variant: small-caps; font-weight: bold; font-size: 16px; line-height: 1.15; }
+.sheet-rolltemplate-2d6 .sheet-rt-sub { font-size: 12px; color: #5b4f40; font-style: italic; }
+.sheet-rolltemplate-2d6 .sheet-rt-main { display: flex; align-items: center; gap: 10px; padding: 8px 10px 4px; }
+.sheet-rolltemplate-2d6 .inlinerollresult { background: none !important; border: 0 !important; padding: 0 !important; color: inherit !important; font-weight: bold; }
+.sheet-rolltemplate-2d6 .sheet-rt-total .inlinerollresult { font-size: 30px; line-height: 1; min-width: 44px; text-align: center; padding: 4px 6px !important;
+  border: 2px solid #2b241c !important; border-radius: 6px; background: #fffaf0 !important; display: inline-block; }
+.sheet-rolltemplate-2d6 .sheet-rt-dice { font-size: 15px; letter-spacing: 0.08em; color: #5b4f40; }
+.sheet-rolltemplate-2d6 .sheet-rt-dice .inlinerollresult { font-weight: normal; }
+.sheet-rolltemplate-2d6 .sheet-rt-mode { padding: 0 10px 2px; font-size: 12px; font-weight: bold; color: #7a1f12; }
+.sheet-rolltemplate-2d6 .sheet-rt-outcome { padding: 2px 10px 7px; font-size: 13px; font-style: italic; }
+.sheet-rolltemplate-2d6 .sheet-rt-dmg { padding: 8px 10px; font-size: 14px; }
+.sheet-rolltemplate-2d6 .sheet-rt-dmg .inlinerollresult { font-size: 22px; border-bottom: 2px solid #7a1f12 !important; }
+.sheet-rolltemplate-2d6 .sheet-rt-key { font-variant: small-caps; font-weight: bold; margin-right: 6px; }
+.sheet-rolltemplate-2d6 .sheet-rt-miscast { margin: 0 8px 8px; padding: 5px 8px; border: 1px solid #7a1f12; border-radius: 4px; background: rgba(122,31,18,0.08); font-size: 12.5px; }
+.sheet-rolltemplate-2d6 .sheet-rt-spent { padding: 0 10px 6px; font-size: 12px; color: #5b4f40; }
+.sheet-rolltemplate-2d6 .sheet-rt-desc { padding: 6px 10px 8px; font-size: 12.5px; border-top: 1px dotted #b9a888; white-space: pre-wrap; }
+
+/* buttons: plain text where the printed sheet has plain text */
+.sheet-2d6 .sheet-skillbtn { background: none; border: 0; box-shadow: none; }
+.sheet-2d6 .sheet-skillbtn::before, .sheet-2d6 .sheet-attrbtn::before, .sheet-2d6 .sheet-minibtn::before { content: none; }
+.sheet-profrow label span, .sheet-sdic span { font-size: 11px; color: var(--ink); }
+.sheet-2d6 .sheet-death .sheet-minibtn { align-self: flex-start; }

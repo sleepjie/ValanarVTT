@@ -1,0 +1,113 @@
+/* The character sheet window. Kept apart from the table's stylesheet so nothing of the table leaks into sheets. */
+:root { --ink: #1d1a16; --parch: #f3ecdc; --chrome: #14181e; --chrome-2: #1b2028; --chrome-3: #242b35; --chrome-line: rgba(232, 226, 208, 0.13);
+  --text: #e8e2d0; --text-soft: rgba(232, 226, 208, 0.62); --gold: #c9a45c; --danger: #d0604f; --ok: #6fbf73;
+  --serif: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif; --sans: "Segoe UI", system-ui, sans-serif; }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body.sheetpage { background: #fff; font: 13px/1.4 var(--sans); }
+[hidden] { display: none !important; }
+#sheetbar, #modal, #toasts { color: var(--text); font: 13px/1.4 var(--sans); }
+#sheetbar .muted, #modal .muted { color: var(--text-soft); }
+#sheetbar .small { font-size: 12px; }
+#sheetbar .spacer { flex: 1; }
+#sheetbar .conn { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); }
+#sheetbar .conn.bad { background: var(--danger); }
+#sheetbar .chip { height: 26px; padding: 0 10px; border-radius: 4px; cursor: pointer; background: var(--chrome-2); border: 1px solid var(--chrome-line); color: var(--text); font: inherit; }
+#modal { position: fixed; inset: 0; z-index: 100; background: rgba(5, 7, 10, 0.6); display: flex; align-items: center; justify-content: center; padding: 20px; }
+#modal .dialog { background: var(--chrome); border: 1px solid var(--chrome-line); border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); width: min(420px, 100%); }
+#modal .dh { padding: 12px 16px; border-bottom: 1px solid var(--chrome-line); }
+#modal .dh h2 { margin: 0; font: 600 18px var(--serif); }
+#modal .db { padding: 14px 16px; }
+#modal .df { padding: 10px 16px; border-top: 1px solid var(--chrome-line); display: flex; gap: 8px; justify-content: flex-end; }
+#modal input, #modal select { width: 100%; height: 32px; background: var(--chrome-2); color: var(--text); border: 1px solid var(--chrome-line); border-radius: 4px; padding: 4px 8px; font: inherit; outline: none; }
+#modal input:focus, #modal select:focus { border-color: var(--gold); }
+#modal .btn { height: 30px; padding: 0 14px; border-radius: 4px; cursor: pointer; background: var(--chrome-3); border: 1px solid var(--chrome-line); color: var(--text); font: inherit; }
+#modal .btn.primary { background: var(--gold); border-color: var(--gold); color: var(--ink); font-weight: 600; }
+#toasts { position: fixed; z-index: 200; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
+#toasts .toast { background: #20262f; border: 1px solid var(--chrome-line); border-radius: 5px; padding: 7px 14px; box-shadow: 0 4px 14px rgba(0,0,0,0.5); }
+#toasts .toast.bad { border-color: var(--danger); }
+#sheet .err { color: #b4483a; }
+#sheet .muted { color: #777; }
+body.sheetpage { overflow: hidden; display: flex; flex-direction: column; height: 100%; }
+#sheetbar { flex: none; height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #101318; border-bottom: 1px solid var(--chrome-line); }
+#sheetbar b { font: 600 16px var(--serif); }
+#sheetbar .av { width: 26px; height: 26px; border-radius: 50%; background: #333 center / cover no-repeat; flex: none; }
+body.embed #sheetbar { height: 0; padding: 0; border: 0; overflow: hidden; }
+body.embed #sheetbar #popout { display: none; }
+#sheetwrap { flex: 1; overflow: auto; background: #fff; color: #333; }
+#sheet { min-width: 0; }
+
+.charsheet { font-family: Arial, "Helvetica Neue", Helvetica, sans-serif; font-size: 13px; line-height: 18px; color: #333; padding: 10px; background: #fff; min-height: 100%; }
+:where(.charsheet input[type=text], .charsheet input[type=number], .charsheet input:not([type]), .charsheet select, .charsheet textarea) {
+  font: inherit; color: #333; background: #fff; border: 1px solid #ccc; border-radius: 3px; padding: 3px 5px; box-sizing: border-box; margin: 0; }
+:where(.charsheet input[type=text], .charsheet input[type=number], .charsheet input:not([type])) { width: 165px; height: 28px; }
+:where(.charsheet select) { width: 220px; height: 28px; }
+:where(.charsheet textarea) { width: 100%; height: 100px; resize: vertical; }
+:where(.charsheet input:focus, .charsheet select:focus, .charsheet textarea:focus) { outline: none; border-color: #c9a45c; box-shadow: 0 0 0 2px rgba(201, 164, 92, 0.25); }
+:where(.charsheet input:disabled, .charsheet select:disabled, .charsheet textarea:disabled) { background: #f4f4f4; color: #333; }
+:where(.charsheet input[type=checkbox], .charsheet input[type=radio]) { accent-color: #555; }   /* (browser margins, as on Roll20: sheets count on them) */
+:where(.charsheet) label { display: inline; color: inherit; font-size: inherit; margin: 0; }
+:where(.charsheet h1, .charsheet h2, .charsheet h3, .charsheet h4) { margin: 0.3em 0; line-height: 1.2; }
+:where(.charsheet table) { border-collapse: collapse; }
+:where(.charsheet button) { font: inherit; color: #333; cursor: pointer; }
+:where(.charsheet button[type=roll], .charsheet button[type=action]) {
+  background: linear-gradient(#fff, #e6e6e6); border: 1px solid #b3b3b3; border-radius: 4px; padding: 3px 8px; line-height: 18px; }
+:where(.charsheet button[type=roll]:hover, .charsheet button[type=action]:hover) { background: #e6e6e6; }
+:where(.charsheet button[type=roll]) { cursor: pointer; }
+:where(.charsheet .btn) { background: linear-gradient(#fff, #e6e6e6); border: 1px solid #b3b3b3; border-radius: 4px; padding: 2px 10px; font-size: 12px; color: #333; cursor: pointer; }
+:where(.charsheet .btn:hover) { background: #e6e6e6; }
+:where(.charsheet .repcontrol) { overflow: hidden; margin: 4px 0 10px; }
+:where(.charsheet .repcontrol .btn) { float: left; margin-right: 4px; }
+:where(.charsheet .repcontrol.editmode .repcontrol_add) { display: none; }
+:where(.charsheet .repitem) { position: relative; }
+:where(.charsheet .repitem .itemcontrol) { display: none; position: absolute; right: 0; top: 0; z-index: 3; gap: 3px; }
+:where(.charsheet .repcontainer.editmode .repitem) { outline: 1px dashed #c9a45c; margin-bottom: 3px; padding-right: 64px; }
+:where(.charsheet .repcontainer.editmode .itemcontrol) { display: flex; }
+:where(.charsheet .repcontrol_del) { color: #b4483a !important; font-size: 0 !important; width: 26px; height: 24px; padding: 0 !important; }
+:where(.charsheet .repcontrol_del::after) { content: "\00d7"; font-size: 17px; }
+:where(.charsheet .repcontrol_up) { width: 26px; height: 24px; padding: 0 !important; }
+
+/* Many Windows PCs have only an italic "Helvetica" installed, which turned every sheet slanted.
+   Inside sheets these names now mean Arial (any PC has it), upright unless a sheet asks for italic. */
+@font-face { font-family: "Helvetica Neue"; font-weight: 400; font-style: normal; src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("DejaVu Sans"); }
+@font-face { font-family: "Helvetica Neue"; font-weight: 700; font-style: normal; src: local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold"), local("DejaVu Sans Bold"); }
+@font-face { font-family: "Helvetica Neue"; font-weight: 400; font-style: italic; src: local("Arial Italic"), local("Arial-ItalicMT"), local("Liberation Sans Italic"), local("DejaVu Sans Oblique"); }
+@font-face { font-family: "Helvetica Neue"; font-weight: 700; font-style: italic; src: local("Arial Bold Italic"), local("Arial-BoldItalicMT"), local("Liberation Sans Bold Italic"), local("DejaVu Sans Bold Oblique"); }
+@font-face { font-family: "Helvetica"; font-weight: 400; font-style: normal; src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("DejaVu Sans"); }
+@font-face { font-family: "Helvetica"; font-weight: 700; font-style: normal; src: local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold"), local("DejaVu Sans Bold"); }
+@font-face { font-family: "Helvetica"; font-weight: 400; font-style: italic; src: local("Arial Italic"), local("Arial-ItalicMT"), local("Liberation Sans Italic"), local("DejaVu Sans Oblique"); }
+@font-face { font-family: "Helvetica"; font-weight: 700; font-style: italic; src: local("Arial Bold Italic"), local("Arial-BoldItalicMT"), local("Liberation Sans Bold Italic"), local("DejaVu Sans Bold Oblique"); }
+
+/* A free stand-in for Roll20's Pictos icons: the common ones (add, edit, done, delete, settings) draw as
+   similar symbols, any other letter draws nothing. Built by tools/make_iconfont.py from DejaVu Sans. */
+@font-face { font-family: "pictos"; src: url("/table/vendor/vtt-icons.woff2") format("woff2"); }
+@font-face { font-family: "Pictos Three"; src: url("/table/vendor/vtt-icons.woff2") format("woff2"); }
+@font-face { font-family: "Pictos Custom"; src: url("/table/vendor/vtt-icons.woff2") format("woff2"); }
+:where(.charsheet .sheet-col) { display: inline-block; vertical-align: top; }
+
+/* Roll20 supplies its own icon fonts (Pictos, the dice fonts) to sheets; they're Roll20's to give, not ours.
+   Without them their letters would show as stray "y", "k", "E", so icons are dropped and the roll-options
+   toggle gets a plain gear. */
+.charsheet .sheet-pictos, .charsheet .sheet-pictos-three, .charsheet .sheet-pictos-custom,
+.charsheet .sheet-d4-font, .charsheet .sheet-d6-font, .charsheet .sheet-d8-font, .charsheet .sheet-d10-font,
+.charsheet .sheet-d12-font, .charsheet .sheet-d20-font, .charsheet .pictos:not(.repcontrol_del) { display: none !important; }
+.charsheet span.sheet-ro-label { font-size: 0 !important; }
+.charsheet span.sheet-ro-label::before { content: "\2699"; font: 16px/1 system-ui, sans-serif; }
+
+/* opened hidden to roll one button from a chat link: only its question (if any) shows */
+body.runonly { background: transparent; }
+body.runonly #sheetbar, body.runonly #sheetwrap { visibility: hidden; }
+body.runonly #modal { background: transparent; padding: 0; }
+
+/* Night mode: our own, so the browser's forced dark mode can't muddle the sheet. The page is turned to negative
+   and the hues turned back, so colours keep their meaning; pictures are turned back to normal. */
+:root { color-scheme: only light; }
+body.night #sheetwrap { background: #121418; }
+body.night #sheet { filter: invert(0.9) hue-rotate(180deg); }
+body.night #sheet img, body.night #sheet .sheet-avatar, body.night #sheet [style*="background-image"] { filter: invert(1) hue-rotate(180deg); }
+#nightBtn { font-size: 15px; }
+
+/* Roll buttons show a die, as on Roll20 (sheets that draw their own buttons, like the Legacy sheet's, turn it off).
+   Hovering any roll button lights it up. */
+.charsheet button[type=roll]::before { content: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2213%22%20viewBox%3D%220%200%2030%2024%22%20fill%3D%22none%22%20stroke%3D%22%237a1f16%22%20stroke-width%3D%221.6%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%202l8.7%205v10L12%2022l-8.7-5V7z%22%20fill%3D%22%23f4e3c4%22/%3E%3Cpath%20d%3D%22M12%202L7.5%209.5h9zM7.5%209.5L3.3%2017M16.5%209.5l4.2%207.5M7.5%209.5L12%2017l4.5-7.5M12%2017v5M3.3%2017H20.7%22/%3E%3C/svg%3E"); vertical-align: -2px; }
+.charsheet button[type=roll]:hover { box-shadow: 0 0 0 2px rgba(201, 164, 92, 0.9); }

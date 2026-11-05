@@ -1,0 +1,410 @@
+<rolltemplate class="sheet-rolltemplate-5eDefault">
+	<div class="sheet-rt-card">
+		<div class="sheet-rt-header{{#weapon}} sheet-weapon{{/weapon}}{{#spell}}  sheet-spell{{/spell}}{{#ability}} sheet-ability{{/ability}}{{#save}} sheet-save{{/save}}{{#deathsave}} sheet-deathsave{{/deathsave}}">
+			<div class="sheet-rt-title">{{title}}</div>
+			{{#subheader}}
+			<div class="sheet-rt-subheader">{{subheader}}{{#subheaderright}} &bullet; {{subheaderright}}{{/subheaderright}}</div>
+			{{/subheader}} {{#subheader2}}
+			<div class="sheet-rt-subheader">{{subheader2}}{{#subheaderright2}} &bullet; {{subheaderright2}}{{/subheaderright2}}</div>
+			{{/subheader2}}
+		</div>
+		{{#emote}}
+		<p class="sheet-rt-emote">{{character_name}} {{emote}}</p>
+		{{/emote}}
+		<div class="sheet-main-content">
+			<!--Weapon based attacks-->
+			{{#attack}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Attack</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{attack}}{{#attackadv}} | {{attackadv}}{{/attackadv}} vs AC</div>
+			</div>
+			{{/attack}} {{#damage}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Damage</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{damage}}</div>
+			</div>
+			{{/damage}} {{#rollWasCrit() attack}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{critdamage}}</div>
+			</div>
+			{{/rollWasCrit() attack}} {{#rollWasCrit() attackadv}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit (adv roll)</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{critdamage}} (if attack was made with advantage)</div>
+			</div>
+			{{/rollWasCrit() attackadv}}
+			<!--Spellcasting-->
+			{{#spellshowinfoblock}}
+			<div class="sheet-row sheet-padb">
+				<div class="sheet-col-1-2 sheet-padl sheet-padr sheet-center sheet-border-right-dotted"><span class="sheet-rt-key">Class</span>
+					<br/><span class="sheet-rt-value">{{spellgainedfrom}}</span></div>
+				<div class="sheet-col-1-2 sheet-padl sheet-padr sheet-center sheet-border-left-dotted"><span class="sheet-rt-key">Comp.</span>
+					<br/><span class="sheet-rt-value">{{spellcomponents}}</span></div>
+				<div class="sheet-col-1 sheet-border-top-dotted"></div>
+				<div class="sheet-col-1-2 sheet-padl sheet-padr sheet-center sheet-border-right-dotted"><span class="sheet-rt-key">Cast Time</span>
+					<br/><span class="sheet-rt-value">{{spellcasttime}}</span></div>
+				<div class="sheet-col-1-2 sheet-padl sheet-padr sheet-center sheet-border-left-dotted"><span class="sheet-rt-key">Duration</span>
+					<br/><span class="sheet-rt-value">{{spellduration}}</span></div>
+				<div class="sheet-col-1 sheet-border-top-dotted"></div>
+				<div class="sheet-col-1-2 sheet-padl sheet-padr sheet-center sheet-border-right-dotted"><span class="sheet-rt-key">Target/AoE</span>
+					<br/><span class="sheet-rt-value">{{spelltarget}}</span></div>
+				<div class="sheet-col-1-2 sheet-padl sheet-padr sheet-center sheet-border-left-dotted"><span class="sheet-rt-key">Range</span>
+					<br/><span class="sheet-rt-value">{{spellrange}}</span></div>
+			</div>
+			{{/spellshowinfoblock}} {{#spellshowattack}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Attack</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{spellattack}}{{#spellshowattackadv}} | {{spellattackadv}}{{/spellshowattackadv}} vs AC</div>
+			</div>
+			{{/spellshowattack}} {{#spellshowsavethrow}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Save</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">DC {{spellsavedc}} {{spellsavestat}}</div>
+			</div>
+			{{/spellshowsavethrow}} {{#spellshowhealing}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Healing</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{spellhealing}} HP healed</div>
+			</div>
+			{{/spellshowhealing}} {{#spellshowdamage}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Damage</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{spelldamage}}</div>
+			</div>
+			{{/spellshowdamage}} {{#spellcancrit}} {{#spellshowattack}} {{#rollWasCrit() spellattack}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{spellcritdamage}}</div>
+			</div>
+			{{/rollWasCrit() spellattack}} {{#rollWasCrit() spellattackadv}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit (adv roll)</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{spellcritdamage}} (if attack was made with advantage)</div>
+			</div>
+			{{/rollWasCrit() spellattackadv}} {{/spellshowattack}} {{/spellcancrit}} {{#spellshoweffects}}
+			<div class="sheet-row">
+				<div class="sheet-col-1 sheet-padl sheet-padr sheet-rt-key">Effect</div>
+				<div class="sheet-col-1 sheet-padl sheet-padr sheet-rt-value">{{spelleffect}}</div>
+			</div>
+			{{/spellshoweffects}} {{#spellshowsavethrow}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Save success</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{spellsavesuccess}}</div>
+			</div>
+			{{/spellshowsavethrow}} {{#spellshowdesc}}
+			<div class="sheet-row">
+				<div class="sheet-col-1 sheet-padl sheet-padr sheet-rt-key">Spell Description</div>
+				<div class="sheet-col-1 sheet-padl sheet-padr sheet-rt-value">{{spelldescription}}</div>
+			</div>
+			{{/spellshowdesc}} {{#spellshowhigherlvl}}
+			<div class="sheet-row">
+				<div class="sheet-col-1 sheet-padl sheet-padr sheet-rt-key">At Higher Levels</div>
+				<div class="sheet-col-1 sheet-padl sheet-padr sheet-rt-value">{{spellhigherlevel}}</div>
+			</div>
+			{{/spellshowhigherlvl}}
+			<!--NPC-->
+			{{#npccorestats}}
+			<div class="sheet-row">
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-key">Stat</div>
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-key">Score</div>
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-key">Mod</div>
+			</div>
+			<div class="sheet-row">
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">STR</div>
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">{{npc_strength}}</div>
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">{{npc_strength_mod}}</div>
+			</div>
+			<div class="sheet-row">
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">DEX</div>
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">{{npc_dexterity}}</div>
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">{{npc_dexterity_mod}}</div>
+			</div>
+			<div class="sheet-row">
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">CON</div>
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">{{npc_constitution}}</div>
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">{{npc_constitution_mod}}</div>
+			</div>
+			<div class="sheet-row">
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">INT</div>
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">{{npc_intelligence}}</div>
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">{{npc_intelligence_mod}}</div>
+			</div>
+			<div class="sheet-row">
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">WIS</div>
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">{{npc_wisdom}}</div>
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">{{npc_wisdom_mod}}</div>
+			</div>
+			<div class="sheet-row">
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">CHA</div>
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">{{npc_charisma}}</div>
+				<div class="sheet-col-1-3 sheet-padl sheet-padr sheet-rt-value">{{npc_charisma_mod}}</div>
+			</div>
+			{{/npccorestats}} {{#npctraits}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Dmg Resistance</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{npc_damage_resistance}}</div>
+			</div>
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Dmg Vuln.</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{npc_damage_vulnerability}}</div>
+			</div>
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Dmg Immunity</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{npc_damage_immunity}}</div>
+			</div>
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Condition Immunity</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{npc_condition_immunity}}</div>
+			</div>
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Other Traits</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{npc_traits}}</div>
+			</div>
+			{{/npctraits}} {{#npcaction}} {{#npc_showmultiattack}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Multi Attack</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{npc_multiattack}}</div>
+			</div>
+			{{/npc_showmultiattack}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Desc.</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{npc_action_description}}</div>
+			</div>
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Effect</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{npc_action_effect}}</div>
+			</div>
+			{{/npcaction}}
+			<!--Generic section-->
+			{{#freetext}}
+			<div class="sheet-row">
+				<div class="sheet-col-1 sheet-padl sheet-padr sheet-rt-key-wide">{{freetextname}}</div>
+				<div class="sheet-col-1 sheet-padl sheet-padr sheet-rt-value">{{freetext}}</div>
+			</div>
+			{{/freetext}} {{#roll}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">{{rollname}}</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{roll}}{{#rolladv}} | {{rolladv}}{{/rolladv}}</div>
+			</div>
+			{{/roll}}
+			<!-- START roll option templates -->
+			<!--Simple roll (such as save/skill check or weapon attack)-->
+			{{#simple}} {{#rollhasadv}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Roll type</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">With advantage</div>
+			</div>
+			{{/rollhasadv}} {{#rollhasdisadv}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Roll type</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">With disadvantage</div>
+			</div>
+			{{/rollhasdisadv}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">{{rollname}}</div>
+				{{#noadvroll}}
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{roll1}}</div>
+				{{/noadvroll}} {{#showadvroll}}
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{roll1}} | {{roll2}}</div>
+				{{/showadvroll}} {{#rollhasadv}} {{#rollTotal() roll1 roll2}}
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{roll1}} | <span class="sheet-ignored-roll">{{roll2}}</span></div>{{/rollTotal() roll1 roll2}} {{#rollGreater() roll1 roll2}}
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{roll1}} | <span class="sheet-ignored-roll">{{roll2}}</span></div>{{/rollGreater() roll1 roll2}} {{#rollGreater() roll2 roll1}}
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value"><span class="sheet-ignored-roll">{{roll1}}</span> | {{roll2}}</div>{{/rollGreater() roll2 roll1}} {{/rollhasadv}} {{#rollhasdisadv}} {{#rollTotal() roll1 roll2}}
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{roll1}} | <span class="sheet-ignored-roll">{{roll2}}</span></div>{{/rollTotal() roll1 roll2}} {{#rollLess() roll1 roll2}}
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{roll1}} | <span class="sheet-ignored-roll">{{roll2}}</span></div>{{/rollLess() roll1 roll2}} {{#rollLess() roll2 roll1}}
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value"><span class="sheet-ignored-roll">{{roll1}}</span> | {{roll2}}</div>{{/rollLess() roll2 roll1}} {{/rollhasdisadv}}
+			</div>
+			{{#weapondamage}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Damage</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{weapondamage}}</div>
+			</div>
+			{{/weapondamage}} {{#weapon}} {{#noadvroll}} {{#rollWasCrit() roll1}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{weaponcritdamage}}</div>
+			</div>
+			{{/rollWasCrit() roll1}} {{/noadvroll}} {{#showadvroll}} {{#rollWasCrit() roll1}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{weaponcritdamage}}</div>
+			</div>
+			{{/rollWasCrit() roll1}} {{#rollWasCrit() roll2}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit (adv roll)</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{weaponcritdamage}}</div>
+			</div>
+			{{/rollWasCrit() roll2}} {{/showadvroll}} {{#rollhasadv}} {{#rollGreater() roll1 roll2}} {{#rollWasCrit() roll1}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{weaponcritdamage}}</div>
+			</div>
+			{{/rollWasCrit() roll1}} {{/rollGreater() roll1 roll2}} {{#rollGreater() roll2 roll1}} {{#rollWasCrit() roll2}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{weaponcritdamage}}</div>
+			</div>
+			{{/rollWasCrit() roll2}} {{/rollGreater() roll2 roll1}} {{#rollTotal() roll1 roll2}} {{#rollWasCrit() roll1}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{weaponcritdamage}}</div>
+			</div>
+			{{/rollWasCrit() roll1}} {{/rollTotal() roll1 roll2}} {{/rollhasadv}} {{#rollhasdisadv}} {{#rollLess() roll1 roll2}} {{#rollWasCrit() roll1}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{weaponcritdamage}}</div>
+			</div>
+			{{/rollWasCrit() roll1}} {{/rollLess() roll1 roll2}} {{#rollLess() roll2 roll1}} {{#rollWasCrit() roll2}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{weaponcritdamage}}</div>
+			</div>
+			{{/rollWasCrit() roll2}} {{/rollLess() roll2 roll1}} {{#rollTotal() roll1 roll2}} {{#rollWasCrit() roll1}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{weaponcritdamage}}</div>
+			</div>
+			{{/rollWasCrit() roll1}} {{/rollTotal() roll1 roll2}} {{/rollhasdisadv}} {{/weapon}} {{#math}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Math</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value sheet-no-roll-highlight">{{math}}</div>
+			</div>
+			{{/math}} {{/simple}}
+			<!-- END roll option templates -->
+			<!-- Class action additions -->
+			{{#showclassactions}} {{#allprops() showclassactions character_name save title subheader subheaderright subheader2 subheaderright2 rollname roll rolladv emote deathsave weapon attack attackadv damage critdamage spell spellshowinfoblock spellshowdesc spelldescription spellshowhigherlvl spellhigherlevel spellshowattack spellattack spellshowattackadv spellattackadv spellshowsavethrow spellsavedc spellsavestat spellsavesuccess spellshowhealing spellhealing spellshowdamage spelldamage spellcancrit spellcritdamage spellshoweffects spelleffect spellcasttime spellduration spelltarget spellrange spellgainedfrom spellcomponents ability roll1 roll2 simple showadvroll noadvroll rollhasadv rollhasdisadv math weapondamage weaponcritdamage debug}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">{{key}}</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{value}}</div>
+			</div>
+			{{/allprops() showclassactions character_name save title subheader subheaderright subheader2 subheaderright2 rollname roll rolladv emote deathsave weapon attack attackadv damage critdamage spell spellshowinfoblock spellshowdesc spelldescription spellshowhigherlvl spellhigherlevel spellshowattack spellattack spellshowattackadv spellattackadv spellshowsavethrow spellsavedc spellsavestat spellsavesuccess spellshowhealing spellhealing spellshowdamage spelldamage spellcancrit spellcritdamage spellshoweffects spelleffect spellcasttime spellduration spelltarget spellrange spellgainedfrom spellcomponents ability roll1 roll2 simple showadvroll noadvroll rollhasadv rollhasdisadv math weapondamage weaponcritdamage debug}} {{/showclassactions}}
+			<!--Multi attack-->
+			{{#multiattack}}
+			<!--Attack 1-->
+			{{#mattack1}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Attack1</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mattack1}}{{#mattack1adv}} | {{mattack1adv}}{{/mattack1adv}} vs AC</div>
+			</div>
+			{{/mattack1}} {{#mdamage1}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Damage1</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mdamage1}}</div>
+			</div>
+			{{/mdamage1}} {{#rollWasCrit() mattack1}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit1</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mcritdamage1}}</div>
+			</div>
+			{{/rollWasCrit() mattack1}} {{#rollWasCrit() mattack1adv}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit1 (adv roll)</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mcritdamage1}} (if attack was made with advantage)</div>
+			</div>
+			{{/rollWasCrit() mattack1adv}}
+			<!--Attack 2-->
+			{{#mattack2}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Attack2</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mattack2}}{{#mattack2adv}} | {{mattack2adv}}{{/mattack2adv}} vs AC</div>
+			</div>
+			{{/mattack2}} {{#mdamage2}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Damage2</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mdamage2}}</div>
+			</div>
+			{{/mdamage2}} {{#rollWasCrit() mattack2}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit2</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mcritdamage2}}</div>
+			</div>
+			{{/rollWasCrit() mattack2}} {{#rollWasCrit() mattack2adv}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit2 (adv roll)</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mcritdamage2}} (if attack was made with advantage)</div>
+			</div>
+			{{/rollWasCrit() mattack2adv}}
+			<!--Attack 3-->
+			{{#mattack3}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Attack3</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mattack3}}{{#mattack3adv}} | {{mattack3adv}}{{/mattack3adv}} vs AC</div>
+			</div>
+			{{/mattack3}} {{#mdamage3}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Damage3</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mdamage3}}</div>
+			</div>
+			{{/mdamage3}} {{#rollWasCrit() mattack3}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit3</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mcritdamage3}}</div>
+			</div>
+			{{/rollWasCrit() mattack3}} {{#rollWasCrit() mattack3adv}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit3 (adv roll)</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mcritdamage3}} (if attack was made with advantage)</div>
+			</div>
+			{{/rollWasCrit() mattack3adv}}
+			<!--Attack 4-->
+			{{#mattack4}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Attack4</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mattack4}}{{#mattack4adv}} | {{mattack4adv}}{{/mattack4adv}} vs AC</div>
+			</div>
+			{{/mattack4}} {{#mdamage4}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Damage4</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mdamage4}}</div>
+			</div>
+			{{/mdamage4}} {{#rollWasCrit() mattack4}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit4</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mcritdamage4}}</div>
+			</div>
+			{{/rollWasCrit() mattack4}} {{#rollWasCrit() mattack4adv}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit4 (adv roll)</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mcritdamage4}} (if attack was made with advantage)</div>
+			</div>
+			{{/rollWasCrit() mattack4adv}}
+			<!--Attack 5-->
+			{{#mattack5}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Attack5</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mattack5}}{{#mattack5adv}} | {{mattack5adv}}{{/mattack5adv}} vs AC</div>
+			</div>
+			{{/mattack5}} {{#mdamage5}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Damage5</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mdamage5}}</div>
+			</div>
+			{{/mdamage5}} {{#rollWasCrit() mattack5}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit5</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mcritdamage5}}</div>
+			</div>
+			{{/rollWasCrit() mattack5}} {{#rollWasCrit() mattack5adv}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">Crit5 (adv roll)</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{mcritdamage5}} (if attack was made with advantage)</div>
+			</div>
+			{{/rollWasCrit() mattack5adv}} {{/multiattack}}
+			<!--Outputall-->
+			{{#outputall}} {{#allprops() outputall title subheader subheaderright subheader2 subheaderright2 emote weapon spell ability save deathsave}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">{{key}}</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{value}}</div>
+			</div>
+			{{/allprops() outputall title subheader subheaderright subheader2 subheaderright2 emote weapon spell ability save deathsave}} {{/outputall}}
+			<!--DEBUG-->
+			{{#debug}} {{#allprops()}}
+			<div class="sheet-row">
+				<div class="sheet-col-5-12 sheet-padl sheet-padr sheet-rt-key">{{key}} (DEBUG)</div>
+				<div class="sheet-col-7-12 sheet-padr sheet-rt-value">{{value}}</div>
+			</div>
+			{{/allprops()}} {{/debug}}
+		</div>
+	</div>
+</rolltemplate>

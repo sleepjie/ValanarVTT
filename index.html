@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My World</title>
+<script>/* in the table's frames: set before anything is drawn, so the full site never shows for a moment first */
+(function () { var q = location.search, c = document.documentElement.classList; if (/[?&]embed(=|&|$)/.test(q)) { c.add('embed'); if (/[?&]scene(=|&|$)/.test(q)) c.add('scenemode'); } })();</script>
+<link rel="stylesheet" href="leaflet/leaflet.css">
+<link rel="stylesheet" href="app/style.css">
+<script src="/table/shared/theme.js"></script><!-- the accent colour each person picks -->
+</head>
+<body>
+<div id="map"></div>
+
+<header id="topbar">
+  <a class="brand" href="#/map" title="My World">My World</a>
+  <nav id="views">
+    <button data-view="map" class="on">Map</button>
+    <button data-view="wiki" title="The wiki: pages, pictures and documents in folders">Wiki</button>
+    <button data-view="library" title="The Library: the world's own books and documents">Library</button>
+    <button data-view="observatory" title="The Observatory: the constellations of the night sky">Observatory</button>
+    <a id="tableLink" href="table/" title="The tabletop: battle maps, sheets and dice">Tabletop</a>
+    <button data-view="admin" title="Admin: the site, people and backups">Admin</button>
+  </nav>
+  <div class="search">
+    <input id="search" type="search" placeholder="Search places, pages, tools… (Ctrl+K)" autocomplete="off" spellcheck="false">
+    <div id="results" hidden></div>
+  </div>
+  <span class="tbgrow"></span>
+  <div id="maptools">
+    <button id="editToggle" class="switch" hidden title="Edit the map: place, move and change icons and borders (E)"><span class="lbl">Edit map</span><span class="track"><span class="knob"></span></span></button>
+  </div>
+  <span class="tbsep"></span>
+  <div id="me"></div>
+  <span class="tbsep"></span>
+  <button id="fsBtn" class="fsbtn" title="Full screen (Esc to leave)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path class="fsin" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><path class="fsout" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg></button>
+</header>
+
+<nav id="hotbar" aria-label="Map tools">
+  <button id="rulerToggle" title="Ruler: measure distances and travel time (R)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg></button>
+  <button id="polToggle" title="Borders: show nations and their borders (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5l5-2 6 2 5-2v16l-5 2-6-2-5 2z"/><path d="M9 3v16M15 5v16" stroke-dasharray="2 2"/></svg></button>
+  <button id="reachToggle" hidden title="Travel: how far in a day, and the way from one place to another"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="2.2" fill="currentColor"/><circle cx="12" cy="12" r="6" stroke-dasharray="2.6 2.2"/><circle cx="12" cy="12" r="9.6"/></svg></button>
+  <button id="agesToggle" hidden title="Through the ages: the map at other times"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12M6 21h12"/><path d="M7 3c0 5 5 6 5 9s-5 4-5 9M17 3c0 5-5 6-5 9s5 4 5 9"/><path d="M9.5 18.5c.8-1.2 1.6-1.7 2.5-1.7s1.7.5 2.5 1.7z" fill="currentColor"/></svg></button>
+  <button id="talesToggle" hidden title="Tales: journeys across the map, told stop by stop (and Drift)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 5.6c3-1.2 6-1 9 1 3-2 6-2.2 9-1V19c-3-1-6-.8-9 1.2-3-2-6-2.2-9-1.2z"/><path d="M12 6.6v13.6"/><path d="M16 4.2v5l1.4-1.1 1.4 1.1v-5.6" fill="currentColor" stroke-width="1.2"/></svg></button>
+  <button id="postcardToggle" hidden title="A postcard: the map as you see it, framed, to save or send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="1.2" stroke-dasharray="2.2 1.6"/><path d="M6.5 16l3.6-4.6 2.6 3 1.9-2.3 2.9 3.9z" fill="currentColor" stroke-width="1"/><circle cx="15.6" cy="8.9" r="1.4" fill="currentColor" stroke="none"/></svg></button>
+  <button id="lookToggle" title="Map settings: how the map looks for you (the sea, names, icons, night, units)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></svg></button>
+  <button id="soundToggle" hidden title="Sound"></button>
+  <div class="sep"></div>
+  <!-- time and weather go here -->
+</nav>
+
+<div id="editbar" hidden>
+  <div class="group" id="palette" aria-label="Place a new icon"></div>
+  <div class="sep"></div>
+  <button class="tool" id="btnUnplaced" title="Settlements imported from your sheet that aren't on the map yet">Unplaced <b id="unplacedCount">0</b></button>
+  <button class="tool" id="btnImport" title="Import a CSV downloaded from the Settlement Sheet">Import CSV</button>
+  <button class="tool" id="btnTypes" title="Icon types: default icon, size, fields, and the zoom they appear at">Types</button>
+  <button class="tool" id="btnBorders" title="Nations and borders: draw borders, claim land, colours">Borders</button>
+  <button class="tool" id="btnRoutes" title="Routes: sea lanes, river passages, roads and trade routes">Routes</button>
+  <button class="tool" id="btnNames" title="Names along a curve: seas, lakes and rivers, mountain ranges, forests and regions">Names</button>
+  <button class="tool" id="btnArmies" title="Armies: bands, companies and hosts on the map, and how fast they march">Armies</button>
+  <button class="tool icon" id="btnSettings" title="Map settings: the sea, rivers, lettering, icons, night, the view, units"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></svg></button>
+  <div class="sep"></div>
+  <button class="tool icon" id="btnUndo" title="Undo (Ctrl+Z)">&#8630;</button>
+  <button class="tool icon" id="btnRedo" title="Redo (Ctrl+Y)">&#8631;</button>
+  <div class="sep"></div>
+  <div id="status"></div>
+  <input id="fileCsv" type="file" accept=".csv,text/csv" multiple hidden>
+</div>
+
+<div id="banner" hidden></div>
+<div id="ruler" hidden></div>
+<aside id="panel" hidden></aside>
+
+<div id="wiki" hidden>
+  <nav id="wikiNav">
+    <input id="wikiFilter" type="search" placeholder="Filter pages" autocomplete="off" spellcheck="false">
+    <div id="wikiTree"></div>
+  </nav>
+  <main id="wikiMain"><article id="wikiArticle"></article></main>
+  <aside id="wikiToc"></aside>
+</div>
+<div id="drive" hidden></div>
+<div id="admin" hidden></div>
+<div id="calendar" hidden></div>
+<div id="modal" hidden></div>
+<div id="toasts"></div>
+<div id="notice" hidden>No map tiles found.<br>Run <code>make_tiles.bat</code> in this folder first, then reload this page.</div>
+
+<script>
+// If something stops the page starting, say so (rather than leaving it blank), with a way to clear what this browser
+// has saved for the site (remembered pages, views and settings), which is the usual culprit after an update.
+(function () {
+  var shown = false;
+  function show(msg) {
+    if (shown || window.VALANAR_STARTED) return; shown = true;
+    var go = function () {
+      var box = document.createElement('div');
+      box.id = 'startfail';
+      box.style.cssText = 'position:fixed;left:50%;top:70px;transform:translateX(-50%);z-index:99999;max-width:520px;background:#fff;color:#222;border:1px solid #c33;border-radius:8px;padding:14px 18px;font:14px system-ui,sans-serif;box-shadow:0 6px 30px rgba(0,0,0,.3)';
+      box.innerHTML = '<b>This page didn\u2019t finish loading.</b><div style="margin:6px 0 10px;color:#666;font-size:12px;word-break:break-word"></div>'
+        + '<button style="padding:6px 12px;cursor:pointer">Clear this browser\u2019s saved settings for the site and reload</button>';
+      box.querySelector('div').textContent = msg;
+      box.querySelector('button').onclick = function () {
+        try { for (var i = localStorage.length - 1; i >= 0; i--) { var k = localStorage.key(i); if (/^(valanar|vtt)/i.test(k)) localStorage.removeItem(k); } } catch (e) { /* blocked */ }
+        try { sessionStorage.clear(); } catch (e) { /* blocked */ }
+        location.reload();
+      };
+      document.body.appendChild(box);
+    };
+    if (document.body) go(); else document.addEventListener('DOMContentLoaded', go);
+  }
+  // only if the page then never finished starting (an error it gets past is no reason to worry anyone)
+  var first = '';
+  window.addEventListener('error', function (e) { if (e.filename && e.filename.indexOf(location.origin) !== 0) return; if (e.message && !first) first = e.message + (e.filename ? ' (' + e.filename.split('/').slice(-2).join('/') + ':' + e.lineno + ')' : ''); });
+  window.addEventListener('unhandledrejection', function (e) { if (!first) first = String(e.reason && e.reason.message || e.reason); });
+  window.addEventListener('load', function () { setTimeout(function () { if (!window.VALANAR_STARTED) show(first || 'The page stopped while starting.'); }, 2500); });
+})();
+</script>
+<script src="data/icons.js"></script><!-- list of icon images -->
+<script>
+// The main world map, or another version of it (?atlas=<id>: a campaign's map for another time, from the server).
+(function () {
+  var q = new URLSearchParams(location.search), a = q.get('atlas') || '';
+  window.VALANAR_ATLAS_ID = /^a[a-f0-9]{12}$/.test(a) ? a : '';
+  // placed icons, types, unplaced list, nations, borders
+  document.write('<script src="data/markers.js' + (window.VALANAR_ATLAS_ID ? '?atlas=' + window.VALANAR_ATLAS_ID : '') + '"><\/script>');
+})();
+</script>
+<script>
+// Its picture: the main tiles, or maps/<folder>/ made by make_tiles.bat (the image size, the land mask for the sea and borders)
+(function () {
+  var t = (window.VALANAR_ATLAS && window.VALANAR_ATLAS.tiles) || '';
+  if (!/^[a-z0-9_-]{1,60}$/i.test(t)) t = '';
+  window.VALANAR_TILES = t ? 'maps/' + t + '/' : '';
+  var w = function (src) { document.write('<script src="' + src + '"><\/script>'); };
+  w(t ? 'maps/' + t + '/mapinfo.js' : 'mapinfo.js');
+  w(t ? 'maps/' + t + '/land.js' : 'data/land.js');
+  if (!window.VALANAR_ATLAS_ID) w('data/import.js');   // one-off import from Wonderdraft; ignored once saved
+})();
+</script>
+<script src="data/wiki.js"></script><!-- the Obsidian vault, written by make_wiki.bat -->
+<script src="leaflet/leaflet.js"></script>
+<script src="lib/marked.min.js"></script><!-- Markdown for the wiki -->
+<script src="api/session.js"></script><!-- from the server: who's looking (absent when opened as a file) -->
+<script src="app/lore.js"></script>
+<script src="app/wiki.js"></script>
+<script src="app/library.js"></script><!-- the timeline, the constellation and the bookshelf -->
+<script src="app/drive.js"></script>
+<script src="app/admin.js"></script>
+<script src="table/shared/calendar.js"></script>
+<script src="table/shared/weatherfx.js"></script>
+<script src="table/shared/weathergl.js"></script>
+<script src="app/sky.js"></script>
+<script src="app/calendar.js"></script>
+<script src="app/maptools.js"></script>
+<script src="app/armies.js"></script>
+<script src="app/ambience.js"></script>
+<script src="app/phone.js"></script>
+<script src="app/heraldry-charges.js"></script>
+<script src="app/heraldry.js"></script>
+<script src="app/armsshop.js"></script>
+<script src="app/names.js"></script>
+<script src="app/tales.js"></script>
+<script src="app/reach.js"></script>
+<script src="app/presence.js"></script>
+<script src="app/postcard.js"></script>
+<script src="/table/shared/merge.js"></script>
+<script src="app/app.js"></script>
+</body>
+</html>

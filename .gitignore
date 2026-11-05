@@ -1,0 +1,13 @@
+vtt-data/
+vtt-data-before-*/
+node_modules/
+site.tgz
+patch.tgz
+patch.list
+data.tgz
+go_live.cfg
+go_live.last
+go_live.next
+tools/vips-dev-*/
+*.psd
+worldmap*.png

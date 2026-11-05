@@ -1,0 +1,5 @@
+# Replace example.com with your address. Caddy fetches the HTTPS certificate itself.
+example.com {
+	encode gzip
+	reverse_proxy site:8642
+}

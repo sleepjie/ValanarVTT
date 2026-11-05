@@ -1,0 +1,7 @@
+vtt-data
+.git
+tools/vips-dev-*
+*.png
+!tiles/**/*.png
+!icons/**/*.png
+!table/**/*.png

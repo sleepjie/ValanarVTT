@@ -1,0 +1,23 @@
+# The site behind Caddy, which gets and renews an HTTPS certificate by itself.
+# 1. Point a domain (or a free name: see docs/HOSTING.md) at this server.
+# 2. Put that name in deploy/Caddyfile, and choose an admin password below.
+# 3. docker compose -f deploy/docker-compose.yml up -d
+services:
+  site:
+    build: ..
+    restart: unless-stopped
+    environment:
+      VTT_ADMIN_NAME: GM
+      VTT_ADMIN_PASSWORD: change-me-please
+    volumes:
+      - site-data:/data
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+volumes:
+  site-data:
+  caddy-data:

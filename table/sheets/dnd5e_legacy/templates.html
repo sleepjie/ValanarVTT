@@ -1,0 +1,1127 @@
+<rolltemplate class="sheet-rolltemplate-simple">
+        <div class="sheet-licensedsheet-flag-{{licensedsheet}}"></div>
+        <div class="sheet-container">
+            <div class="sheet-result">
+                {{#always}}
+                    <div class="sheet-adv">
+                        <span>{{r1}}{{#global}} + {{global}}{{/global}}</span>
+                    </div>
+                    <div class="sheet-advspacer"></div>
+                    <div class="sheet-adv">
+                        <span>{{r2}}{{#global}} + {{global}}{{/global}}</span>
+                    </div>
+                {{/always}}
+                {{#normal}}
+                    <div class="sheet-solo">
+                        <span>{{r1}}{{#global}} + {{global}}{{/global}}</span>
+                    </div>
+                {{/normal}}
+                {{#advantage}}
+                    {{#rollLess() r1 r2}}
+                        <div class="sheet-adv">
+                            <span class="sheet-grey">{{r1}}{{#global}} + {{global}}{{/global}}</span>
+                        </div>
+                        <div class="sheet-advspacer"></div>
+                        <div class="sheet-adv">
+                            <span>{{r2}}{{#global}} + {{global}}{{/global}}</span>
+                        </div>
+                    {{/rollLess() r1 r2}}
+                    {{#rollTotal() r1 r2}}
+                        <div class="sheet-adv">
+                            <span>{{r1}}{{#global}} + {{global}}{{/global}}</span>
+                        </div>
+                        <div class="sheet-advspacer"></div>
+                        <div class="sheet-adv">
+                            <span>{{r2}}{{#global}} + {{global}}{{/global}}</span>
+                        </div>
+                    {{/rollTotal() r1 r2}}
+                    {{#rollGreater() r1 r2}}
+                        <div class="sheet-adv">
+                            <span>{{r1}}{{#global}} + {{global}}{{/global}}</span>
+                        </div>
+                        <div class="sheet-advspacer"></div>
+                        <div class="sheet-adv">
+                            <span class="sheet-grey">{{r2}}{{#global}} + {{global}}{{/global}}</span>
+                        </div>
+                    {{/rollGreater() r1 r2}}
+                {{/advantage}}
+                {{#disadvantage}}
+                    {{#rollLess() r1 r2}}
+                        <div class="sheet-adv">
+                            <span>{{r1}}{{#global}} + {{global}}{{/global}}</span>
+                        </div>
+                        <div class="sheet-advspacer"></div>
+                        <div class="sheet-adv">
+                            <span class="sheet-grey">{{r2}}{{#global}} + {{global}}{{/global}}</span>
+                        </div>
+                    {{/rollLess() r1 r2}}
+                    {{#rollTotal() r1 r2}}
+                        <div class="sheet-adv">
+                            <span>{{r1}}{{#global}} + {{global}}{{/global}}</span>
+                        </div>
+                        <div class="sheet-advspacer"></div>
+                        <div class="sheet-adv">
+                            <span>{{r2}}{{#global}} + {{global}}{{/global}}</span>
+                        </div>
+                    {{/rollTotal() r1 r2}}
+                    {{#rollGreater() r1 r2}}
+                        <div class="sheet-adv">
+                            <span class="sheet-grey">{{r1}}{{#global}} + {{global}}{{/global}}</span>
+                        </div>
+                        <div class="sheet-advspacer"></div>
+                        <div class="sheet-adv">
+                            <span>{{r2}}{{#global}} + {{global}}{{/global}}</span>
+                        </div>
+                    {{/rollGreater() r1 r2}}
+                {{/disadvantage}}
+            </div>
+            <div class="sheet-label">
+                <span>{{rname}}{{#mod}} <span>({{mod}})</span>{{/mod}}</span>
+            </div>
+            {{#charname}}
+                <div class="sheet-charname">
+                    <span>{{charname}}</span>
+                </div>
+            {{/charname}}
+        </div>
+    </rolltemplate>
+<rolltemplate class="sheet-rolltemplate-atk">
+        <div class="sheet-licensedsheet-flag-{{licensedsheet}}"></div>
+        <div class="sheet-container">
+            <div class="sheet-result">
+                {{#always}}
+                    <div class="sheet-adv">
+                        <span>{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                    </div>
+                    <div class="sheet-advspacer"></div>
+                    <div class="sheet-adv">
+                        <span>{{r2}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                    </div>
+                {{/always}}
+                {{#normal}}
+                    <div class="sheet-solo">
+                        <span>{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                    </div>
+                {{/normal}}
+                {{#advantage}}
+                    {{#rollLess() r1 r2}}
+                        <div class="sheet-adv">
+                            <span class="sheet-grey">{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                        </div>
+                        <div class="sheet-advspacer"></div>
+                        <div class="sheet-adv">
+                            <span>{{r2}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                        </div>
+                    {{/rollLess() r1 r2}}
+                    {{#rollTotal() r1 r2}}
+                        <div class="sheet-adv">
+                            <span>{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                        </div>
+                        <div class="sheet-advspacer"></div>
+                        <div class="sheet-adv">
+                            <span>{{r2}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                        </div>
+                    {{/rollTotal() r1 r2}}
+                    {{#rollGreater() r1 r2}}
+                        <div class="sheet-adv">
+                            <span>{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                        </div>
+                        <div class="sheet-advspacer"></div>
+                        <div class="sheet-adv">
+                            <span class="sheet-grey">{{r2}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                        </div>
+                    {{/rollGreater() r1 r2}}
+                {{/advantage}}
+                {{#disadvantage}}
+                    {{#rollLess() r1 r2}}
+                        <div class="sheet-adv">
+                            <span>{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                        </div>
+                        <div class="sheet-advspacer"></div>
+                        <div class="sheet-adv">
+                            <span class="sheet-grey">{{r2}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                        </div>
+                    {{/rollLess() r1 r2}}
+                    {{#rollTotal() r1 r2}}
+                        <div class="sheet-adv">
+                            <span>{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                        </div>
+                        <div class="sheet-advspacer"></div>
+                        <div class="sheet-adv">
+                            <span>{{r2}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                        </div>
+                    {{/rollTotal() r1 r2}}
+                    {{#rollGreater() r1 r2}}
+                        <div class="sheet-adv">
+                            <span class="sheet-grey">{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                        </div>
+                        <div class="sheet-advspacer"></div>
+                        <div class="sheet-adv">
+                            <span>{{r2}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                        </div>
+                    {{/rollGreater() r1 r2}}
+                {{/disadvantage}}
+            </div>
+            {{#range}}
+                <div class="sheet-sublabel">
+                    <span>{{range}}</span>
+                </div>
+            {{/range}}
+            <div class="sheet-label">
+                {{#normal}}
+                    {{#rollWasCrit() r1}}<span>{{rnamec}}{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}} <span>({{mod}})</span></span>{{/rollWasCrit() r1}}
+                    {{#^rollWasCrit() r1}}<span>{{rname}}{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}} <span>({{mod}})</span></span>{{/^rollWasCrit() r1}}
+                {{/normal}}
+                {{#always}}
+                    {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}<span>{{rnamec}}{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}} <span>({{mod}})</span></span>{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                    {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}<span>{{rnamec}}{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}} <span>({{mod}})</span></span>{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                    {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}<span>{{rnamec}}{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}} <span>({{mod}})</span></span>{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                    {{#^rollWasCrit() r1}}{{#^rollWasCrit() r2}}<span>{{rname}}{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}} <span>({{mod}})</span></span>{{/^rollWasCrit() r2}}{{/^rollWasCrit() r1}}
+                {{/always}}
+                {{#advantage}}
+                    {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}<span>{{rnamec}}{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}} <span>({{mod}})</span></span>{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                    {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}<span>{{rnamec}}{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}} <span>({{mod}})</span></span>{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                    {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}<span>{{rnamec}}{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}} <span>({{mod}})</span></span>{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                    {{#^rollWasCrit() r1}}{{#^rollWasCrit() r2}}<span>{{rname}}{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}} <span>({{mod}})</span></span>{{/^rollWasCrit() r2}}{{/^rollWasCrit() r1}}
+                {{/advantage}}
+                {{#disadvantage}}
+                    {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}<span>{{rnamec}}{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}} <span>({{mod}})</span></span>{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                    {{#rollTotal() r1 r2}}{{#^rollWasCrit() r1}}<span>{{rname}}{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}} <span>({{mod}})</span></span>{{/^rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                    {{#rollLess() r1 r2}}<span>{{rname}}{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}} <span>({{mod}})</span></span>{{/rollLess() r1 r2}}
+                    {{#rollGreater() r1 r2}}<span>{{rname}}{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}} <span>({{mod}})</span></span>{{/rollGreater() r1 r2}}
+                {{/disadvantage}}
+            </div>
+            {{#charname}}
+                <div class="sheet-charname">
+                    <span>{{charname}}</span>
+                </div>
+            {{/charname}}
+        </div>
+        {{#desc}}
+            <div class="sheet-desc sheet-info">
+                <span>
+                    <span class="sheet-top"></span><span class="sheet-middle">{{desc}}</span><span class="sheet-bottom"></span>
+                </span>
+            </div>
+        {{/desc}}
+    </rolltemplate>
+<rolltemplate class="sheet-rolltemplate-dmg">
+        <div class="sheet-licensedsheet-flag-{{licensedsheet}}"></div>
+        {{#save}}
+            {{#attack}}
+                <div class="sheet-desc sheet-save">
+            {{/attack}}
+            {{^attack}}
+                <div class="sheet-atk sheet-save">
+            {{/attack}}
+                <div class="sheet-savedc">
+                    <span class="sheet-rolltemplate-inline" data-i18n="difficulty-class-abv">DC</span><span class="sheet-rolltemplate-inline">{{savedc}}</span>
+                </div>
+                {{#savedesc}}
+                    <div class="sheet-sublabel">
+                        <span>{{savedesc}}</span>
+                    </div>
+                {{/savedesc}}
+                <div class="sheet-label">
+                    <span class="sheet-rolltemplate-inline">{{saveattr}}</span> <span class="sheet-rolltemplate-inline" data-i18n="save">Save</span>
+                </div>
+            </div>
+        {{/save}}
+        {{^attack}}
+            {{#desc}}
+                <div class="sheet-desc sheet-info">
+                    <span>
+                        <span class="sheet-top"></span><span class="sheet-middle">{{desc}}</span><span class="sheet-bottom"></span>
+                    </span>
+                </div>
+            {{/desc}}
+        {{/attack}}
+        {{#globaldamage}}
+            {{#^rollTotal() globaldamage 0}}
+                <div class="sheet-desc">
+                    <span>{{globaldamage}}{{#globaldamagecrit}}<span class="sheet-plus"> + </span>{{globaldamagecrit}}{{/globaldamagecrit}}</span>
+                    <span class="sheet-sublabel">{{globaldamagetype}}</span>
+                </div>
+            {{/^rollTotal() globaldamage 0}}
+        {{/globaldamage}}
+        {{#hldmg}}
+            {{#^rollTotal() hldmg 0}}
+                <div class="sheet-desc">
+                    <span>{{hldmg}}{{#hldmgcrit}}<span class="sheet-plus"> + </span>{{hldmgcrit}}{{/hldmgcrit}}</span>
+                    <span class="sheet-sublabel">{{dmg1type}}</span>
+                    <div class="sheet-label">
+                        <span data-i18n="higher-lvl-cast">Higher Level Cast</span>
+                    </div>
+                </div>
+            {{/^rollTotal() hldmg 0}}
+        {{/hldmg}}
+        <div class="sheet-container sheet-damagetemplate">
+            <div class="sheet-result">
+                {{#dmg1flag}}
+                    {{^dmg2flag}}
+                        <div class="sheet-solo">
+                            <span class="sheet-damage">{{dmg1}}{{#crit}} + {{crit1}}{{/crit}}</span>
+                            <span class="sheet-sublabel">{{dmg1type}}</span>
+                        </div>
+                    {{/dmg2flag}}
+                {{/dmg1flag}}
+                {{#dmg2flag}}
+                    {{^dmg1flag}}
+                        <div class="sheet-solo">
+                            <span class="sheet-damage">{{dmg2}}{{#crit}} + {{crit2}}{{/crit}}</span>
+                            <span class="sheet-sublabel">{{dmg2type}}</span>
+                        </div>
+                    {{/dmg1flag}}
+                {{/dmg2flag}}
+                {{#dmg1flag}}
+                    {{#dmg2flag}}
+                        <div class="sheet-adv">
+                            <span class="sheet-damage">{{dmg1}}{{#crit}} + {{crit1}}{{/crit}}</span>
+                            <span class="sheet-sublabel">{{dmg1type}}</span>
+                        </div>
+                        <div class="sheet-advspacer"></div>
+                        <div class="sheet-adv">
+                            <span class="sheet-damage">{{dmg2}}{{#crit}} + {{crit2}}{{/crit}}</span>
+                            <span class="sheet-sublabel">{{dmg2type}}</span>
+                        </div>
+                    {{/dmg2flag}}
+                {{/dmg1flag}}
+            </div>
+            {{^attack}}
+                {{#range}}
+                    <div class="sheet-sublabel" style="color: black;">
+                        <span>{{range}}</span>
+                    </div>
+                {{/range}}
+                <div class="sheet-label">
+                    <span>{{rname}}</span>{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}}
+                </div>
+                {{#charname}}
+                    <div class="sheet-charname">
+                        <span>{{charname}}</span>
+                    </div>
+                {{/charname}}
+            {{/attack}}
+        </div>
+    </rolltemplate>
+<rolltemplate class="sheet-rolltemplate-atkdmg">
+        <div class="sheet-licensedsheet-flag-{{licensedsheet}}"></div>
+        {{#attack}}
+            <div class="sheet-container sheet-atk">
+                <div class="sheet-result">
+                    {{#always}}
+                        <div class="sheet-adv">
+                            <span>{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                        </div>
+                        <div class="sheet-advspacer"></div>
+                        <div class="sheet-adv">
+                            <span>{{r2}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                        </div>
+                    {{/always}}
+                    {{#normal}}
+                        <div class="sheet-solo">
+                            <span>{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                        </div>
+                    {{/normal}}
+                    {{#advantage}}
+                        {{#rollLess() r1 r2}}
+                            <div class="sheet-adv">
+                                <span class="sheet-grey">{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                            </div>
+                            <div class="sheet-advspacer"></div>
+                            <div class="sheet-adv">
+                                <span>{{r2}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                            </div>
+                        {{/rollLess() r1 r2}}
+                        {{#rollTotal() r1 r2}}
+                            <div class="sheet-adv">
+                                <span>{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                            </div>
+                            <div class="sheet-advspacer"></div>
+                            <div class="sheet-adv">
+                                <span>{{r2}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                            </div>
+                        {{/rollTotal() r1 r2}}
+                        {{#rollGreater() r1 r2}}
+                            <div class="sheet-adv">
+                                <span>{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                            </div>
+                            <div class="sheet-advspacer"></div>
+                            <div class="sheet-adv">
+                                <span class="sheet-grey">{{r2}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                            </div>
+                        {{/rollGreater() r1 r2}}
+                    {{/advantage}}
+                    {{#disadvantage}}
+                        {{#rollLess() r1 r2}}
+                            <div class="sheet-adv">
+                                <span>{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                            </div>
+                            <div class="sheet-advspacer"></div>
+                            <div class="sheet-adv">
+                                <span class="sheet-grey">{{r2}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                            </div>
+                        {{/rollLess() r1 r2}}
+                        {{#rollTotal() r1 r2}}
+                            <div class="sheet-adv">
+                                <span>{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                            </div>
+                            <div class="sheet-advspacer"></div>
+                            <div class="sheet-adv">
+                                <span>{{r2}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                            </div>
+                        {{/rollTotal() r1 r2}}
+                        {{#rollGreater() r1 r2}}
+                            <div class="sheet-adv">
+                                <span class="sheet-grey">{{r1}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                            </div>
+                            <div class="sheet-advspacer"></div>
+                            <div class="sheet-adv">
+                                <span>{{r2}}{{#globalattack}} + {{globalattack}}{{/globalattack}}</span>
+                            </div>
+                        {{/rollGreater() r1 r2}}
+                    {{/disadvantage}}
+                </div>
+                {{#range}}
+                    <div class="sheet-sublabel">
+                        <span>{{range}}</span>
+                    </div>
+                {{/range}}
+                <div class="sheet-label">
+                    <span>{{rname}}{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}}{{#attack}} <span>({{mod}})</span>{{/attack}}</span>
+                </div>
+                {{#charname}}
+                    <div class="sheet-charname">
+                        <span>{{charname}}</span>
+                    </div>
+                {{/charname}}
+            </div>
+        {{/attack}}
+        {{#save}}
+            {{#attack}}
+                <div class="sheet-container sheet-desc sheet-save">
+            {{/attack}}
+            {{^attack}}
+                <div class="sheet-container sheet-atk sheet-save">
+            {{/attack}}
+                <div class="sheet-savedc">
+                    <span class="sheet-rolltemplate-inline" data-i18n="difficulty-class-abv">DC</span><span class="sheet-rolltemplate-inline">{{savedc}}</span>
+                </div>
+                {{#savedesc}}
+                    <div class="sheet-sublabel">
+                        <span>{{savedesc}}</span>
+                    </div>
+                {{/savedesc}}
+                <div class="sheet-label">
+                    <span class="sheet-rolltemplate-inline">{{saveattr}}</span> <span class="sheet-rolltemplate-inline" data-i18n="save">Save</span>
+                </div>
+            </div>
+        {{/save}}
+        {{#desc}}
+            <div class="sheet-desc sheet-info">
+                <span>
+                    <span class="sheet-top"></span><span class="sheet-middle">{{desc}}</span><span class="sheet-bottom"></span>
+                </span>
+            </div>
+        {{/desc}}
+        {{#globaldamage}}
+            {{#^rollTotal() globaldamage 0}}
+                <div class="sheet-desc">
+                    <span>
+                        {{globaldamage}}
+                        {{#attack}}
+                            {{#normal}}
+                                {{#rollWasCrit() r1}}<span class="sheet-plus"> + </span>{{globaldamagecrit}}{{/rollWasCrit() r1}}
+                            {{/normal}}
+                            {{#always}}
+                                {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}<span class="sheet-plus"> + </span>{{globaldamagecrit}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}<span class="sheet-plus"> + </span>{{globaldamagecrit}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}<span class="sheet-plus"> + </span>{{globaldamagecrit}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                            {{/always}}
+                            {{#advantage}}
+                                {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}<span class="sheet-plus"> + </span>{{globaldamagecrit}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}<span class="sheet-plus"> + </span>{{globaldamagecrit}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}<span class="sheet-plus"> + </span>{{globaldamagecrit}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                            {{/advantage}}
+                            {{#disadvantage}}
+                                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}<span class="sheet-plus"> + </span>{{globaldamagecrit}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                            {{/disadvantage}}
+                        {{/attack}}
+                    </span>
+                    <span class="sheet-sublabel">{{globaldamagetype}}</span>
+                </div>
+            {{/^rollTotal() globaldamage 0}}
+        {{/globaldamage}}
+        {{#hldmg}}
+            {{#^rollTotal() hldmg 0}}
+                <div class="sheet-desc">
+                    <span>
+                        {{hldmg}}
+                        <!-- {{#hldmgcrit}} + {{hldmgcrit}}{{/hldmgcrit}} -->
+                        {{#attack}}
+                            {{#normal}}
+                                {{#rollWasCrit() r1}}<span class="sheet-plus"> + </span>{{hldmgcrit}}{{/rollWasCrit() r1}}
+                            {{/normal}}
+                            {{#always}}
+                                {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}<span class="sheet-plus"> + </span>{{hldmgcrit}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}<span class="sheet-plus"> + </span>{{hldmgcrit}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}<span class="sheet-plus"> + </span>{{hldmgcrit}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                            {{/always}}
+                            {{#advantage}}
+                                {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}<span class="sheet-plus"> + </span>{{hldmgcrit}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}<span class="sheet-plus"> + </span>{{hldmgcrit}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}<span class="sheet-plus"> + </span>{{hldmgcrit}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                            {{/advantage}}
+                            {{#disadvantage}}
+                                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}<span class="sheet-plus"> + </span>{{hldmgcrit}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                            {{/disadvantage}}
+                        {{/attack}}
+                    </span>
+                    <span class="sheet-sublabel">{{dmg1type}}</span>
+                    <div class="sheet-label">
+                        <span data-i18n="higher-lvl-cast">Higher Level Cast</span>
+                    </div>
+                </div>
+            {{/^rollTotal() hldmg 0}}
+        {{/hldmg}}
+        {{#damage}}
+            <div class="sheet-container sheet-damagetemplate">
+                <div class="sheet-result">
+                    {{#dmg1flag}}
+                        {{^dmg2flag}}
+                            <div class="sheet-solo">
+                                <span class="sheet-damage">
+                                    {{dmg1}}
+                                    {{#attack}}
+                                        {{#normal}}
+                                            {{#rollWasCrit() r1}}+ {{crit1}}{{/rollWasCrit() r1}}
+                                        {{/normal}}
+                                        {{#always}}
+                                            {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}+ {{crit1}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                            {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}+ {{crit1}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                            {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}+ {{crit1}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                                        {{/always}}
+                                        {{#advantage}}
+                                            {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}+ {{crit1}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                            {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}+ {{crit1}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                            {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}+ {{crit1}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                                        {{/advantage}}
+                                        {{#disadvantage}}
+                                            {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}+ {{crit1}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                        {{/disadvantage}}
+                                    {{/attack}}
+                                </span>
+                                <span class="sheet-sublabel">{{dmg1type}}</span>
+                            </div>
+                        {{/dmg2flag}}
+                    {{/dmg1flag}}
+                    {{#dmg2flag}}
+                        {{^dmg1flag}}
+                            <div class="sheet-solo">
+                                <span class="sheet-damage">
+                                    {{dmg2}}
+                                    {{#attack}}
+                                        {{#normal}}
+                                            {{#rollWasCrit() r1}}+ {{crit2}}{{/rollWasCrit() r1}}
+                                        {{/normal}}
+                                        {{#always}}
+                                            {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}+ {{crit2}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                            {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}+ {{crit2}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                            {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}+ {{crit2}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                                        {{/always}}
+                                        {{#advantage}}
+                                            {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}+ {{crit2}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                            {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}+ {{crit2}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                            {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}+ {{crit2}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                                        {{/advantage}}
+                                        {{#disadvantage}}
+                                            {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}+ {{crit2}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                        {{/disadvantage}}
+                                    {{/attack}}
+                                </span>
+                                <span class="sheet-sublabel">{{dmg2type}}</span>
+                            </div>
+                        {{/dmg1flag}}
+                    {{/dmg2flag}}
+                    {{#dmg1flag}}
+                        {{#dmg2flag}}
+                            <div class="sheet-adv">
+                                <span class="sheet-damage">
+                                    {{dmg1}}
+                                    {{#attack}}
+                                        {{#normal}}
+                                            {{#rollWasCrit() r1}}+ {{crit1}}{{/rollWasCrit() r1}}
+                                        {{/normal}}
+                                        {{#always}}
+                                            {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}+ {{crit1}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                            {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}+ {{crit1}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                            {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}+ {{crit1}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                                        {{/always}}
+                                        {{#advantage}}
+                                            {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}+ {{crit1}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                            {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}+ {{crit1}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                            {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}+ {{crit1}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                                        {{/advantage}}
+                                        {{#disadvantage}}
+                                            {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}+ {{crit1}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                        {{/disadvantage}}
+                                    {{/attack}}
+                                </span>
+                                <span class="sheet-sublabel">{{dmg1type}}</span>
+                            </div>
+                            <div class="sheet-advspacer"></div>
+                            <div class="sheet-adv">
+                                <span>
+                                    {{dmg2}}
+                                    {{#attack}}
+                                        {{#normal}}
+                                            {{#rollWasCrit() r1}}+ {{crit2}}{{/rollWasCrit() r1}}
+                                        {{/normal}}
+                                        {{#always}}
+                                            {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}+ {{crit2}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                            {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}+ {{crit2}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                            {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}+ {{crit2}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                                        {{/always}}
+                                        {{#advantage}}
+                                            {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}+ {{crit2}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                            {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}+ {{crit2}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                            {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}+ {{crit2}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                                        {{/advantage}}
+                                        {{#disadvantage}}
+                                            {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}+ {{crit2}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                        {{/disadvantage}}
+                                    {{/attack}}
+                                </span>
+                                <span class="sheet-sublabel">{{dmg2type}}</span>
+                            </div>
+                        {{/dmg2flag}}
+                    {{/dmg1flag}}
+                </div>
+                {{^attack}}
+                    {{#range}}
+                        <div class="sheet-sublabel">
+                            <span>{{range}}</span>
+                        </div>
+                    {{/range}}
+                    <div class="sheet-label">
+                        <span>{{rname}}</span>{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}}
+                    </div>
+                    {{#charname}}
+                        <div class="sheet-charname">
+                            <span>{{charname}}</span>
+                        </div>
+                    {{/charname}}
+                {{/attack}}
+            </div>
+        {{/damage}}
+    </rolltemplate>
+<rolltemplate class="sheet-rolltemplate-desc">
+        <div class="sheet-licensedsheet-flag-{{licensedsheet}}"></div>
+        <div class="sheet-desc sheet-info">
+            <span>
+                <span class="sheet-top"></span><span class="sheet-middle">{{desc}}</span><span class="sheet-bottom"></span>
+            </span>
+        </div>
+    </rolltemplate>
+<rolltemplate class="sheet-rolltemplate-spell">
+        <div class="sheet-licensedsheet-flag-{{licensedsheet}}"></div>
+        <div class="sheet-container">
+            <div class="sheet-title sheet-row">
+                <span>{{name}}</span>{{#innate}}<span class="sheet-grey">, {{innate}}</span>{{/innate}}
+            </div>
+            <div class="sheet-italics sheet-row">
+                <span>{{level}}{{#ritual}} (<span data-i18n="ritual-l"></span>){{/ritual}}</span>
+            </div>
+            <div class="sheet-spacer"></div>
+            {{#castingtime}}
+            <div class="sheet-row">
+                <span class="sheet-bold" data-i18n="casting-time:">Casting Time:</span> <span>{{castingtime}}</span>
+            </div>
+            {{/castingtime}}
+            {{#range}}
+            <div class="sheet-row">
+                <span class="sheet-bold" data-i18n="range:">Range:</span> <span>{{range}}</span>
+            </div>
+            {{/range}}
+            {{#target}}
+            <div class="sheet-row">
+                <span class="sheet-bold" data-i18n="target:">Target:</span> <span>{{target}}</span>
+            </div>
+            {{/target}}
+            <div class="sheet-row">
+                <span class="sheet-bold" data-i18n="components:">Components:</span>
+                <span>
+                    {{#v}}V{{#s}}, {{/s}}{{^s}}{{#m}}, {{/m}}{{/s}}{{/v}}
+                    {{#s}}S{{#m}}, {{/m}}{{/s}}
+                    {{#m}}M {{#material}}({{material}}){{/material}}{{/m}}
+                </span>
+            </div>
+            {{#duration}}
+            <div class="sheet-row">
+                <span class="sheet-bold" data-i18n="duration:">Duration:</span> <span>{{#concentration}}<span data-i18n="concentration">Concentration</span> {{/concentration}}{{duration}}</span>
+            </div>
+            {{/duration}}
+            <div class="sheet-spacer"></div>
+            {{#description}}
+            <div class="sheet-row">
+                <span class="sheet-description">{{description}}</span>
+            </div>
+            {{/description}}
+            {{#athigherlevels}}
+            <div class="sheet-row">
+                <span class="sheet-bold sheet-italics" data-i18n="at-higher-lvl">At Higher Levels</span>. <span class="sheet-description">{{athigherlevels}}</span>
+            </div>
+            {{/athigherlevels}}
+        </div>
+    </rolltemplate>
+<rolltemplate class="sheet-rolltemplate-traits">
+        <div class="sheet-licensedsheet-flag-{{licensedsheet}}"></div>
+        <div class="sheet-row sheet-header">
+            <span>{{name}}</span>
+        </div>
+        {{#source}}
+            <div class="sheet-row sheet-subheader">
+                <span class="sheet-italics">{{#charname}}{{charname}} {{/charname}}{{source}}</span>
+            </div>
+        {{/source}}
+        {{#description}}
+            <div class="sheet-row">
+                <span class="sheet-desc">{{description}}</span>
+            </div>
+        {{/description}}
+    </rolltemplate>
+<rolltemplate class="sheet-rolltemplate-npc">
+        <div class="sheet-licensedsheet-flag-{{licensedsheet}}"></div>
+        <div class="sheet-row sheet-header">
+            <span>{{rname}}</span>
+        </div>
+        {{#name}}
+            <div class="sheet-row sheet-subheader">
+                <span class="sheet-italics">{{name}}</span>
+            </div>
+        {{/name}}
+        <div class="sheet-arrow-right"></div>
+        <div class="sheet-row">
+            {{#normal}}
+                <span class="sheet-italics">{{type}}: </span><span>{{r1}}</span>
+            {{/normal}}
+            {{#always}}
+                <span class="sheet-italics">{{type}}: </span><span>{{r1}}</span><span> | </span><span>{{r2}}</span>
+            {{/always}}
+            {{#advantage}}
+                {{#rollLess() r1 r2}}
+                    <span class="sheet-italics">{{type}}: </span><span class="sheet-grey">{{r1}}</span><span> | </span><span>{{r2}}</span>
+                {{/rollLess() r1 r2}}
+                {{#rollTotal() r1 r2}}
+                    <span class="sheet-italics">{{type}}: </span><span>{{r1}}</span><span> | </span><span>{{r2}}</span>
+                {{/rollTotal() r1 r2}}
+                {{#rollGreater() r1 r2}}
+                    <span class="sheet-italics">{{type}}: </span><span>{{r1}}</span><span> | </span><span class="sheet-grey">{{r2}}</span>
+                {{/rollGreater() r1 r2}}
+            {{/advantage}}
+            {{#disadvantage}}
+                {{#rollLess() r1 r2}}
+                    <span class="sheet-italics">{{type}}: </span><span>{{r1}}</span><span> | </span><span class="sheet-grey">{{r2}}</span>
+                {{/rollLess() r1 r2}}
+                {{#rollTotal() r1 r2}}
+                    <span class="sheet-italics">{{type}}: </span><span>{{r1}}</span><span> | </span><span>{{r2}}</span>
+                {{/rollTotal() r1 r2}}
+                {{#rollGreater() r1 r2}}
+                    <span class="sheet-italics">{{type}}: </span><span class="sheet-grey">{{r1}}</span><span> | </span><span>{{r2}}</span>
+                {{/rollGreater() r1 r2}}
+            {{/disadvantage}}
+        </div>
+    </rolltemplate>
+<rolltemplate class="sheet-rolltemplate-npcatk">
+        <div class="sheet-licensedsheet-flag-{{licensedsheet}}"></div>
+        <div class="sheet-row sheet-header">
+            {{#normal}}
+                {{#rollWasCrit() r1}}{{rnamec}}{{/rollWasCrit() r1}}
+                {{#^rollWasCrit() r1}}{{rname}}{{/^rollWasCrit() r1}}
+            {{/normal}}
+            {{#always}}
+                {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}{{rnamec}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}{{rnamec}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}{{rnamec}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                {{#^rollWasCrit() r1}}{{#^rollWasCrit() r2}}{{rname}}{{/^rollWasCrit() r2}}{{/^rollWasCrit() r1}}
+            {{/always}}
+            {{#advantage}}
+                {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}{{rnamec}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}{{rnamec}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}{{rnamec}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                {{#^rollWasCrit() r1}}{{#^rollWasCrit() r2}}{{rname}}{{/^rollWasCrit() r2}}{{/^rollWasCrit() r1}}
+            {{/advantage}}
+            {{#disadvantage}}
+                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}{{rnamec}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                {{#rollTotal() r1 r2}}{{#^rollWasCrit() r1}}{{rname}}{{/^rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                {{#rollLess() r1 r2}}{{rname}}{{/rollLess() r1 r2}}
+                {{#rollGreater() r1 r2}}{{rnamec}}{{/rollGreater() r1 r2}}
+            {{/disadvantage}}
+        </div>
+        {{#name}}
+            <div class="sheet-row sheet-subheader">
+                <span class="sheet-italics">{{name}}</span>
+            </div>
+        {{/name}}
+        <div class="sheet-arrow-right"></div>
+        <div class="sheet-row">
+            {{#normal}}
+                {{#rollWasCrit() r1}}<span class="sheet-italics">{{typec}}: </span>{{/rollWasCrit() r1}}
+                {{#^rollWasCrit() r1}}<span class="sheet-italics">{{type}}: </span>{{/^rollWasCrit() r1}}
+            {{/normal}}
+            {{#always}}
+                {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}<span class="sheet-italics">{{typec}}: </span>{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}<span class="sheet-italics">{{typec}}: </span>{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}<span class="sheet-italics">{{typec}}: </span>{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                {{#^rollWasCrit() r1}}{{#^rollWasCrit() r2}}<span class="sheet-italics">{{type}}: </span>{{/^rollWasCrit() r2}}{{/^rollWasCrit() r1}}
+            {{/always}}
+            {{#advantage}}
+                {{#rollLess() r1 r2}}{{#rollWasCrit() r2}}<span class="sheet-italics">[{{typec}}: </span>{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}<span class="sheet-italics">{{typec}}: </span>{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}}<span class="sheet-italics">{{typec}}: </span>{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                {{#^rollWasCrit() r1}}{{#^rollWasCrit() r2}}<span class="sheet-italics">{{type}}: </span>{{/^rollWasCrit() r2}}{{/^rollWasCrit() r1}}
+            {{/advantage}}
+            {{#disadvantage}}
+                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}}<span class="sheet-italics">{{typec}}: </span>{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                {{#rollTotal() r1 r2}}{{#^rollWasCrit() r1}}<span class="sheet-italics">{{type}}: </span>{{/^rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                {{#rollLess() r1 r2}}<span class="sheet-italics">{{type}}: </span>{{/rollLess() r1 r2}}
+                {{#rollGreater() r1 r2}}<span class="sheet-italics">{{typec}}: </span>{{/rollGreater() r1 r2}}
+            {{/disadvantage}}
+            {{#normal}}
+                <span>{{r1}}</span>
+            {{/normal}}
+            {{#always}}
+                <span>{{r1}}</span><span> | </span><span>{{r2}}</span>
+            {{/always}}
+            {{#advantage}}
+                {{#rollLess() r1 r2}}
+                    <span class="sheet-grey">{{r1}}</span><span> | </span><span>{{r2}}</span>
+                {{/rollLess() r1 r2}}
+                {{#rollTotal() r1 r2}}
+                    <span>{{r1}}</span><span> | </span><span>{{r2}}</span>
+                {{/rollTotal() r1 r2}}
+                {{#rollGreater() r1 r2}}
+                    <span>{{r1}}</span><span> | </span><span class="sheet-grey">{{r2}}</span>
+                {{/rollGreater() r1 r2}}
+            {{/advantage}}
+            {{#disadvantage}}
+                {{#rollLess() r1 r2}}
+                    <span>{{r1}}</span><span> | </span><span class="sheet-grey">{{r2}}</span>
+                {{/rollLess() r1 r2}}
+                {{#rollTotal() r1 r2}}
+                    <span>{{r1}}</span><span> | </span><span>{{r2}}</span>
+                {{/rollTotal() r1 r2}}
+                {{#rollGreater() r1 r2}}
+                    <span class="sheet-grey">{{r1}}</span><span> | </span><span>{{r2}}</span>
+                {{/rollGreater() r1 r2}}
+            {{/disadvantage}}
+        </div>
+        {{#description}}
+            <div class="sheet-row">
+                <span class="sheet-desc">{{description}}</span>
+            </div>
+        {{/description}}
+    </rolltemplate>
+<rolltemplate class="sheet-rolltemplate-npcdmg">
+        <div class="sheet-licensedsheet-flag-{{licensedsheet}}"></div>
+        <div class="sheet-container sheet-dmgcontainer sheet-damagetemplate">
+            <span class="sheet-italics">Damage: </span>
+            <span>
+                {{#dmg1flag}}
+                    {{dmg1}}{{#crit}} + {{crit1}}{{/crit}}{{dmg1type}}
+                {{/dmg1flag}}
+                {{#dmg1flag}}{{#dmg2flag}}+{{/dmg2flag}}{{/dmg1flag}}
+                {{#dmg2flag}}
+                    {{dmg2}}{{#crit}} + {{crit2}}{{/crit}}{{dmg2type}}
+                {{/dmg2flag}}
+            </span>
+        </div>
+    </rolltemplate>
+<rolltemplate class="sheet-rolltemplate-npcaction">
+        <div class="sheet-licensedsheet-flag-{{licensedsheet}}"></div>
+        <div class="sheet-container">
+            <div class="sheet-row sheet-header">
+                <span>{{rname}}</span>
+            </div>
+            {{#name}}
+                <div class="sheet-row sheet-subheader">
+                    <span class="sheet-italics">{{name}}</span>
+                </div>
+            {{/name}}
+            <div class="sheet-arrow-right"></div>
+            {{#attack}}
+                <div class="sheet-row">
+                    {{#normal}}
+                        <span class="sheet-italics">Attack: </span><span>{{r1}}</span>
+                    {{/normal}}
+                    {{#always}}
+                        <span class="sheet-italics">Attack: </span><span>{{r1}}</span><span> | </span><span>{{r2}}</span>
+                    {{/always}}
+                    {{#advantage}}
+                        {{#rollLess() r1 r2}}
+                            <span class="sheet-italics">Attack: </span><span class="sheet-grey">{{r1}}</span><span> | </span><span>{{r2}}</span>
+                        {{/rollLess() r1 r2}}
+                        {{#rollTotal() r1 r2}}
+                            <span class="sheet-italics">Attack: </span><span>{{r1}}</span><span> | </span><span>{{r2}}</span>
+                        {{/rollTotal() r1 r2}}
+                        {{#rollGreater() r1 r2}}
+                            <span class="sheet-italics">Attack: </span><span>{{r1}}</span><span> | </span><span class="sheet-grey">{{r2}}</span>
+                        {{/rollGreater() r1 r2}}
+                    {{/advantage}}
+                    {{#disadvantage}}
+                        {{#rollLess() r1 r2}}
+                            <span class="sheet-italics">Attack: </span><span>{{r1}}</span><span> | </span><span class="sheet-grey">{{r2}}</span>
+                        {{/rollLess() r1 r2}}
+                        {{#rollTotal() r1 r2}}
+                            <span class="sheet-italics">Attack: </span><span>{{r1}}</span><span> | </span><span>{{r2}}</span>
+                        {{/rollTotal() r1 r2}}
+                        {{#rollGreater() r1 r2}}
+                            <span class="sheet-italics">Attack: </span><span class="sheet-grey">{{r1}}</span><span> | </span><span>{{r2}}</span>
+                        {{/rollGreater() r1 r2}}
+                    {{/disadvantage}}
+                </div>
+            {{/attack}}
+            {{#description}}
+                <span class="sheet-desc">{{description}}</span>
+            {{/description}}
+            </div>
+            {{#damage}}
+                <div class="sheet-container sheet-dmgcontainer sheet-damagetemplate">
+                    <span class="sheet-italics">Damage: </span>
+                    <span>
+                        {{#dmg1flag}}
+                            {{dmg1}}
+                            {{#normal}}
+                                {{#rollWasCrit() r1}} + {{crit1}}{{/rollWasCrit() r1}}
+                            {{/normal}}
+                            {{#always}}
+                                {{#rollLess() r1 r2}}{{#rollWasCrit() r2}} + {{crit1}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}} + {{crit1}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}} + {{crit1}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                            {{/always}}
+                            {{#advantage}}
+                                {{#rollLess() r1 r2}}{{#rollWasCrit() r2}} + {{crit1}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}} + {{crit1}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}} + {{crit1}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                            {{/advantage}}
+                            {{#disadvantage}}
+                                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}} + {{crit1}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                            {{/disadvantage}}
+                            {{dmg1type}}
+                        {{/dmg1flag}}
+                        {{#dmg1flag}}{{#dmg2flag}}+{{/dmg2flag}}{{/dmg1flag}}
+                        {{#dmg2flag}}
+                            {{dmg2}}
+                            {{#normal}}
+                                {{#rollWasCrit() r1}} + {{crit2}}{{/rollWasCrit() r1}}
+                            {{/normal}}
+                            {{#always}}
+                                {{#rollLess() r1 r2}}{{#rollWasCrit() r2}} + {{crit2}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}} + {{crit2}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}} + {{crit2}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                            {{/always}}
+                            {{#advantage}}
+                                {{#rollLess() r1 r2}}{{#rollWasCrit() r2}} + {{crit2}}{{/rollWasCrit() r2}}{{/rollLess() r1 r2}}
+                                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}} + {{crit2}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                                {{#rollGreater() r1 r2}}{{#rollWasCrit() r1}} + {{crit2}}{{/rollWasCrit() r1}}{{/rollGreater() r1 r2}}
+                            {{/advantage}}
+                            {{#disadvantage}}
+                                {{#rollTotal() r1 r2}}{{#rollWasCrit() r1}} + {{crit2}}{{/rollWasCrit() r1}}{{/rollTotal() r1 r2}}
+                            {{/disadvantage}}
+                            {{dmg2type}}
+                        {{/dmg2flag}}
+                    </span>
+                </div>
+            {{/damage}}
+    </rolltemplate>
+<rolltemplate class="sheet-rolltemplate-mancerroll">
+        <div class="sheet-licensedsheet-flag-{{licensedsheet}}"></div>
+        <div class="sheet-container">
+            <div class="sheet-row sheet-header">
+                <span>
+                    {{title}}
+                    {{#c1}}
+                        <span>{{c1}}</span>
+                    {{/c1}}
+                </span>
+            </div>
+            {{#r1}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 1: </span>
+                    <span class="sheet-result">{{r1}}</span>
+                </div>
+            {{/r1}}
+            {{#r2}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 2: </span>
+                    <span class="sheet-result">{{r2}}</span>
+                </div>
+            {{/r2}}
+            {{#r3}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 3: </span>
+                    <span class="sheet-result">{{r3}}</span>
+                </div>
+            {{/r3}}
+            {{#r4}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 4: </span>
+                    <span class="sheet-result">{{r4}}</span>
+                </div>
+            {{/r4}}
+            {{#r5}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 5: </span>
+                    <span class="sheet-result">{{r5}}</span>
+                </div>
+            {{/r5}}
+            {{#r6}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 6: </span>
+                    <span class="sheet-result">{{r6}}</span>
+                </div>
+            {{/r6}}
+            <div class="sheet-row">
+                <span class="sheet-desc">
+                    {{#rollTotal() c1 1}}{{option1}}{{/rollTotal() c1 1}}
+                    {{#rollTotal() c1 2}}{{option2}}{{/rollTotal() c1 2}}
+                    {{#rollTotal() c1 3}}{{option3}}{{/rollTotal() c1 3}}
+                    {{#rollTotal() c1 4}}{{option4}}{{/rollTotal() c1 4}}
+                    {{#rollTotal() c1 5}}{{option5}}{{/rollTotal() c1 5}}
+                    {{#rollTotal() c1 6}}{{option6}}{{/rollTotal() c1 6}}
+                    {{#rollTotal() c1 7}}{{option7}}{{/rollTotal() c1 7}}
+                    {{#rollTotal() c1 8}}{{option8}}{{/rollTotal() c1 8}}
+                    {{#rollTotal() c1 9}}{{option9}}{{/rollTotal() c1 9}}
+                    {{#rollTotal() c1 10}}{{option10}}{{/rollTotal() c1 10}}
+                    {{#rollTotal() c1 11}}{{option11}}{{/rollTotal() c1 11}}
+                    {{#rollTotal() c1 12}}{{option12}}{{/rollTotal() c1 12}}
+                    {{#rollTotal() c1 13}}{{option13}}{{/rollTotal() c1 13}}
+                    {{#rollTotal() c1 14}}{{option14}}{{/rollTotal() c1 14}}
+                    {{#rollTotal() c1 15}}{{option15}}{{/rollTotal() c1 15}}
+                    {{#rollTotal() c1 16}}{{option16}}{{/rollTotal() c1 16}}
+                    {{#rollTotal() c1 17}}{{option17}}{{/rollTotal() c1 17}}
+                    {{#rollTotal() c1 18}}{{option18}}{{/rollTotal() c1 18}}
+                    {{#rollTotal() c1 19}}{{option19}}{{/rollTotal() c1 19}}
+                    {{#rollTotal() c1 20}}{{option20}}{{/rollTotal() c1 20}}
+                </span>
+            </div>
+        </div>
+    </rolltemplate>
+<rolltemplate class="sheet-rolltemplate-mancerhproll">
+        <div class="sheet-licensedsheet-flag-{{licensedsheet}}"></div>
+        <div class="sheet-container">
+            <div class="sheet-row sheet-header">
+                <span>
+                    {{title}}
+                    {{#c1}}
+                        <span>{{c1}}</span>
+                    {{/c1}}
+                </span>
+            </div>
+            {{#a1}}
+                <div class="sheet-row">
+                <span class="sheet-desc">Average: </span><span class="sheet-result">{{a1}}</span>
+                </div>
+            {{/a1}}
+            {{#r1}}
+                <div class="sheet-row">
+                <span class="sheet-desc">Roll 1: </span><span class="sheet-result">{{r1}}</span>
+                </div>
+            {{/r1}}
+            {{#r2}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 2: </span><span class="sheet-result">{{r2}}</span>
+                </div>
+            {{/r2}}
+            {{#r3}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 3: </span><span class="sheet-result">{{r3}}</span>
+                </div>
+            {{/r3}}
+            {{#r4}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 4: </span><span class="sheet-result">{{r4}}</span>
+                </div>
+            {{/r4}}
+            {{#r5}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 5: </span><span class="sheet-result">{{r5}}</span>
+                </div>
+            {{/r5}}
+            {{#r6}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 6: </span><span class="sheet-result">{{r6}}</span>
+                </div>
+            {{/r6}}
+            {{#r7}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 7: </span><span class="sheet-result">{{r7}}</span>
+                </div>
+            {{/r7}}
+            {{#r8}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 8: </span><span class="sheet-result">{{r8}}</span>
+                </div>
+            {{/r8}}
+            {{#r9}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 9: </span><span class="sheet-result">{{r9}}</span>
+                </div>
+            {{/r9}}
+            {{#r10}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 10: </span><span class="sheet-result">{{r10}}</span>
+                </div>
+            {{/r10}}
+            {{#r11}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 11: </span><span class="sheet-result">{{r11}}</span>
+                </div>
+            {{/r11}}
+                        {{#r12}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 12: </span><span class="sheet-result">{{r12}}</span>
+                </div>
+            {{/r12}}
+            {{#r13}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 13: </span><span class="sheet-result">{{r13}}</span>
+                </div>
+            {{/r13}}
+            {{#r14}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 14: </span><span class="sheet-result">{{r14}}</span>
+                </div>
+            {{/r14}}
+            {{#r15}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 15: </span><span class="sheet-result">{{r15}}</span>
+                </div>
+            {{/r15}}
+            {{#r16}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 16: </span><span class="sheet-result">{{r16}}</span>
+                </div>
+            {{/r16}}
+            {{#r17}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 17: </span><span class="sheet-result">{{r17}}</span>
+                </div>
+            {{/r17}}
+            {{#r18}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 18: </span><span class="sheet-result">{{r18}}</span>
+                </div>
+            {{/r18}}
+            {{#r19}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 19: </span><span class="sheet-result">{{r19}}</span>
+                </div>
+            {{/r19}}
+            {{#r20}}
+                <div class="sheet-row">
+                    <span class="sheet-desc">Roll 20: </span><span class="sheet-result">{{r20}}</span>
+                </div>
+            {{/r20}}
+        </div>
+    </rolltemplate>

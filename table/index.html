@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabletop</title>
+<link rel="stylesheet" href="/table/style.css">
+<script src="/table/shared/theme.js"></script><!-- the accent colour each person picks -->
+<script src="/api/session.js"></script>
+</head>
+<body>
+<header id="topbar">
+  <a class="brand" href="/table/">Tabletop</a>
+  <nav id="views">
+    <a data-view="map" href="/#/map" title="The world map (a scene too: the GM can move the players onto it)">Map</a>
+    <a data-view="wiki" href="/#/wiki" title="The wiki: pages, pictures and documents in folders">Wiki</a>
+    <a data-view="library" href="/#/library" title="The Library: the world's own books and documents">Library</a>
+    <a data-view="observatory" href="/#/observatory" title="The Observatory: the constellations of the night sky">Observatory</a>
+    <a data-view="table" class="on" href="#" title="The tabletop: battle maps, sheets and dice">Tabletop</a>
+    <a data-view="admin" class="gm" href="/#/admin" title="Admin: the site, people and backups">Admin</a>
+  </nav>
+  <button id="campBtn" class="crumb" title="Campaigns"></button>
+  <div id="sceneSel" hidden></div>
+  <div class="spacer"></div>
+  <button id="joinAudio" class="chip sm" hidden title="Your browser waits for a click before it plays sound">🔊 Join audio</button>
+  <span id="conn" class="conn" title="Connection"></span>
+  <span id="me" class="me"></span>
+  <button id="logout" class="chip sm" hidden>Log out</button>
+  <button id="fsBtn" class="fsbtn" title="Full screen (Esc to leave)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path class="fsin" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><path class="fsout" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg></button>
+  <button id="sideBtn" title="Hide or show the side bar (\)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+</header>
+
+<div id="app" hidden>
+  <div id="tools">
+    <button data-tool="select" title="Select and move (V)">&#x2196;</button>
+    <button data-tool="ruler" title="Measure (R)">&#x1F4CF;&#xFE0E;</button>
+    <button data-tool="template" class="noguest" title="Area templates (T)">&#x25E2;</button>
+    <button data-tool="fog" class="gm" title="Fog of war (F)">&#x2601;&#xFE0E;</button>
+    <button data-tool="journey" class="worldonly" title="Journeys: where the party has been (J)">J</button>
+    <button data-tool="walls" class="gm" title="Walls and doors (W)">&#x2590;&#x258C;</button>
+    <button data-tool="lights" class="gm" title="Lights and sight (B)">&#x2737;</button>
+    <button data-tool="sounds" class="gm" title="Ambient sounds: heard near them, through or round walls (N)">&#x266A;</button>
+    <button data-tool="plan" class="gm" title="Room planner and dungeon generator: draw the map in squares, in ink (P)">P</button>
+    <button data-tool="art" class="gm" title="Art: scenery, objects and containers, from your art library (A)">&#x25A7;</button>
+    <div class="sep gm"></div>
+    <button id="addToken" class="gm" title="Add a token">+</button>
+    <div class="sep noguest"></div>
+    <button id="undoBtn" class="noguest" title="Undo (Ctrl+Z)">&#8630;</button>
+    <button id="redoBtn" class="noguest" title="Redo (Ctrl+Y)">&#8631;</button>
+    <div class="sep"></div>
+    <button id="fitBtn" title="Fit the scene to the screen (0)">&#x2922;</button>
+    <button id="ambBtn" class="worldsound" title="The map's sound: rain, wind, the sea and thunder" hidden></button>
+  </div>
+  <div id="subtools" hidden></div>
+  <div id="stage"></div>
+  <button id="clockBtn" class="clockpill onmap" hidden title="Date, time and weather"></button>
+  <div id="layerDock" class="gm" role="group" aria-label="Layer">
+    <button data-layer="map" title="Map layer: the map itself and scenery laid on it. Move, turn or remove the planned map's furniture here (L: next layer)"><svg viewBox="0 0 24 24"><path d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20z"/><path d="M9 4v13.5M15 6.5V20"/></svg><span>Map</span></button>
+    <button data-layer="tokens" class="on" title="Token layer: creatures, objects, containers: what's in play. Players only ever work here (L: next layer)"><svg viewBox="0 0 24 24"><circle cx="12" cy="6.5" r="3"/><path d="M8.5 20h7l-1.5-6.5 2-3h-8l2 3z"/></svg><span>Tokens</span></button>
+    <button data-layer="gm" title="GM layer: only you see it. Hidden creatures, traps, room numbers and their notes (L: next layer)"><svg viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/><path d="M4 20 20 4"/></svg><span>GM</span></button>
+  </div>
+  <div id="hud"></div>
+  <div id="empty" hidden></div>
+  <aside id="side">
+    <div class="tabs">
+      <button data-tab="chat" class="on">Chat</button>
+      <button data-tab="init">Initiative</button>
+      <button data-tab="chars">Journal</button>
+      <button data-tab="items">Items</button>
+      <button data-tab="spells">Spells</button>
+      <button data-tab="audio">Jukebox</button>
+      <button data-tab="scenes" class="gm">Scenes</button>
+      <button data-tab="players" class="gm">Players</button>
+    </div>
+    <section id="tab-chat" class="tab on">
+      <div id="chatlog"></div>
+      <div id="dicebar" class="noguest"></div>
+      <div class="chatin noguest">
+        <div class="chatbar"><select id="speakAs" title="Speak as"></select><button id="clearChat" class="gm" title="Clear the chat log for everyone" onclick="V.clearChat()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13.5h9l1-13.5M10 11v6M14 11v6"/></svg></button></div>
+        <textarea id="chatText" rows="2" placeholder="Message, or /r 1d20+3   (/gr: GM-only roll, /w Name: whisper, /me: action)"></textarea>
+      </div>
+    </section>
+    <section id="tab-init" class="tab"></section>
+    <section id="tab-chars" class="tab"></section>
+    <section id="tab-items" class="tab"></section>
+    <section id="tab-spells" class="tab"></section>
+    <section id="tab-audio" class="tab"></section>
+    <section id="tab-scenes" class="tab"></section>
+    <section id="tab-players" class="tab"></section>
+  </aside>
+  <div id="panels"></div>
+</div>
+
+<div id="campaigns" hidden></div>
+<div id="modal" hidden></div>
+<div id="toasts"></div>
+<div id="banner" hidden></div>
+
+<script src="/table/vendor/pixi.min.js"></script>
+<script src="/table/shared/dice.js"></script>
+<script src="/table/shared/geom.js"></script>
+<script src="/table/shared/r20roll.js"></script>
+<script src="/table/shared/vision.js"></script>
+<script src="/table/shared/plan.js"></script>
+<script src="/table/shared/calendar.js"></script>
+<script src="/table/shared/weatherfx.js"></script>
+<script src="/table/shared/weathergl.js"></script>
+<script src="/table/js/core.js"></script>
+<script src="/table/js/stage.js"></script>
+<script src="/table/js/lighting.js"></script>
+<script src="/table/js/ambient.js"></script>
+<script src="/table/js/side.js"></script>
+<script src="/table/js/wizard.js"></script>
+<script src="/table/js/chars.js"></script>
+<script src="/table/js/tokenstamp.js"></script>
+<script src="/table/js/npc.js"></script>
+<script src="/table/js/qol.js"></script>
+<script src="/table/js/tokenmenu.js"></script>
+<script src="/table/data/gameicons.js"></script>
+<script src="/table/js/itemart.js"></script>
+<script src="/table/js/cards.js"></script>
+<script src="/table/js/spells.js"></script>
+<script src="/table/js/features.js"></script>
+<script src="/table/js/hotbar.js"></script>
+<script src="/table/js/world.js"></script>
+<script src="/table/js/clock.js"></script>
+<script src="/table/js/audio.js"></script>
+<script src="/table/js/foundry.js"></script>
+<script src="/table/js/roll20.js"></script>
+<script src="/table/js/ddb.js"></script>
+<script src="/table/js/art.js"></script>
+<script src="/table/js/planart.js"></script>
+<script src="/table/js/planner.js"></script>
+<script src="/app/phone.js"></script>
+<script src="/table/js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+Textures for the room planner's painted style.
+
+Photographs from ambientCG (https://ambientcg.com, formerly CC0Textures), released under
+CC0 1.0 Universal (public domain): https://creativecommons.org/publicdomain/zero/1.0/
+Taken from the OSM2World default style (https://github.com/tordanik/osm2world-default-style), resized to 512 px.
+
+  flagstone.jpg    Bricks008          cobble.jpg       PavingStones016    mossycobble.jpg  PavingStones033
+  dirt.jpg         Ground026          earth.jpg        Ground042          grass.jpg        Ground003
+  gravel.jpg       Gravel020          rock.jpg         Rock034            rubble.jpg       Rocks008
+  pebbles.jpg      Rocks022           marble.jpg       Marble001          sand.jpg         Ground033
+  snow.jpg         Snow006            ice.jpg          Ice003             cloth.jpg        Fabric032 (greyscale, for tinting)
+  wood.jpg         Wood026            oldplanks.jpg    WoodSiding008      paper.jpg        Paper001
+  thatch.jpg       ThatchedRoof001A   slate.jpg        RoofingTiles003    plaster.jpg      Plaster002
+  brick.jpg        Bricks029          tiles.jpg        Tiles036 (recoloured)
+  planks.jpg       boards cut and arranged from Wood026 (also CC0)

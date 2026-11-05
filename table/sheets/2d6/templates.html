@@ -1,0 +1,12 @@
+<rolltemplate class="sheet-rolltemplate-2d6">
+<div class="sheet-rt">
+  <div class="sheet-rt-head"><div class="sheet-rt-name">{{name}}</div>{{#sub}}<div class="sheet-rt-sub">{{sub}}</div>{{/sub}}</div>
+  {{#total}}<div class="sheet-rt-main"><div class="sheet-rt-total">{{total}}</div><div class="sheet-rt-dice">{{dice}}</div></div>{{/total}}
+  {{#mode}}<div class="sheet-rt-mode">{{mode}}</div>{{/mode}}
+  {{#outcome}}<div class="sheet-rt-outcome">{{outcome}}</div>{{/outcome}}
+  {{#damage}}<div class="sheet-rt-dmg"><span class="sheet-rt-key">Damage</span> {{damage}}{{#dmgnote}} <span class="sheet-rt-dnote">{{dmgnote}}</span>{{/dmgnote}}</div>{{/damage}}
+  {{#miscast}}<div class="sheet-rt-miscast">{{miscast}}</div>{{/miscast}}
+  {{#spent}}<div class="sheet-rt-spent">{{spent}}</div>{{/spent}}
+  {{#desc}}<div class="sheet-rt-desc">{{desc}}</div>{{/desc}}
+</div>
+</rolltemplate>

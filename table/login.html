@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log in</title>
+<link rel="stylesheet" href="/table/style.css">
+<script src="/table/shared/theme.js"></script><!-- the accent colour each person picks -->
+<script src="/api/session.js"></script>
+</head>
+<body class="loginpage">
+<main class="logincard">
+  <div class="brand big">Log in</div>
+  <h1 id="ttl">Log in</h1>
+  <p id="sub" class="muted"></p>
+  <form id="form" autocomplete="on">
+    <label for="name">Name</label>
+    <input id="name" name="username" autocomplete="username" required maxlength="40">
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <p id="hint" class="muted small" hidden></p>
+    <p id="err" class="err" hidden></p>
+    <button class="btn primary" id="go" type="submit">Log in</button>
+  </form>
+  <p class="loginalt muted" id="alt" hidden><a href="/">Just looking? Carry on without logging in</a></p>
+</main>
+<script src="/table/login.js"></script>
+</body>
+</html>

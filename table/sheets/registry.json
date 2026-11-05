@@ -1,0 +1,5 @@
+{
+  "dnd5e": {"name": "D&D 5E (Community Contributed)", "mode": "5e", "hp": "hp", "hpMax": "hp_max", "credit": "John Myles (Actoba) and contributors, from the Roll20 character sheets repository (MIT licence)"},
+  "dnd5e_legacy": {"name": "D&D 5th Edition Legacy", "mode": "5e", "hp": "hp", "hpMax": "hp_max", "credit": "Steve K. and Phil B., from the Roll20 character sheets repository (MIT licence)", "i18n": true},
+  "2d6": {"name": "2D6", "mode": "2d6", "hp": "hp", "hpMax": "hp_max"}
+}

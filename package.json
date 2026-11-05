@@ -1,0 +1,13 @@
+{
+  "name": "valanar-table",
+  "version": "1.0.0",
+  "description": "A free, self-hosted world atlas, wiki and virtual tabletop for tabletop roleplaying games",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "scripts": {
+    "start": "node server/server.js",
+    "tiles": "python3 tools/make_tiles.py"
+  },
+  "engines": { "node": ">=18" },
+  "keywords": ["vtt", "virtual tabletop", "dnd", "d&d 5e", "worldbuilding", "wiki", "fantasy map", "leaflet", "roll20 alternative", "foundry alternative"]
+}
