@@ -217,8 +217,91 @@ const imported = applyImport();
 
 // ───────────────────────── map ─────────────────────────
 
+// ───────────────────────── smooth zoom and pan ─────────────────────────
+// No zoom steps: the wheel, the + and − buttons, double-click and the keys glide the map towards where it's heading,
+// frame by frame (the spot under the cursor stays under it), and the arrow keys (or WASD) pan it smoothly while held,
+// easing in and out, like a game's map. Each frame is Leaflet's own move (what flyTo does), so every layer follows.
+function smoothNav(map) {
+  let target = null, anchor = null, anchorLL = null, raf = 0, moving = false, last = 0, inFrame = false;
+  const lim = z => Math.max(map.getMinZoom(), Math.min(map.getMaxZoom(), z));
+  function frame(t) {
+    raf = 0;
+    const dt = Math.min(64, last ? t - last : 16); last = t;
+    const z = map.getZoom(), tz = lim(target);
+    let nz = z + (tz - z) * (1 - Math.exp(-dt / 80));
+    if (Math.abs(tz - nz) < 0.003) nz = tz;
+    const size = map.getSize(), half = size.divideBy(2), a = anchor || half, ll = anchorLL || map.containerPointToLatLng(a);
+    let center = map.unproject(map.project(ll, nz).subtract(a.subtract(half)), nz);
+    if (map.options.maxBounds && map._limitCenter) center = map._limitCenter(center, nz, map.options.maxBounds);
+    if (!moving) { inFrame = true; map._stop(); inFrame = false; map._moveStart(true, false); moving = true; map._gliding = true; }
+    // (each frame is a flyTo frame, so the tiles only move rather than redo their grid; the last one settles it all)
+    if (nz !== tz) { map._glideStamp = (map._glideStamp || 0) + 1; map._move(center, nz, { flyTo: true }); raf = requestAnimationFrame(frame); }
+    else { map._gliding = false; map._move(center, nz); end(); }
+  }
+  function end() { target = null; last = 0; map._gliding = false; if (moving) { moving = false; map._moveEnd(true); } }
+  function halt() {   // cut short (a drag, a fly to a place): places skipped while hidden are put right first
+    if (raf) cancelAnimationFrame(raf); raf = 0;
+    if (map._gliding) { map._gliding = false; map.eachLayer(l => { if (l instanceof L.Marker && l._icon) l.update(); }); }
+    end();
+  }
+  // anything else that moves the map (a drag, a fly to a place) takes over
+  const stop0 = map._stop;
+  map._stop = function () { if (!inFrame && (raf || moving)) halt(); return stop0.apply(this, arguments); };
+  function zoomBy(dz, point) {
+    if (map._animatingZoom || !dz) return;
+    target = lim((target == null ? map.getZoom() : target) + dz);
+    map.fire('glidetarget', { zoom: target });
+    anchor = point || null;
+    anchorLL = point ? map.containerPointToLatLng(point) : null;
+    if (!raf) { last = 0; raf = requestAnimationFrame(frame); }
+  }
+  // panning with the keys: a speed that eases towards where the held keys point, and away to nothing when let go
+  const held = new Map(), vel = { x: 0, y: 0 }, carry = { x: 0, y: 0 };
+  let praf = 0, plast = 0, panning = false, fast = false;
+  function panFrame(t) {
+    praf = 0;
+    const dt = Math.min(50, plast ? t - plast : 16) / 1000; plast = t;
+    let dx = 0, dy = 0; for (const d of held.values()) { dx += d[0]; dy += d[1]; }
+    const l = Math.hypot(dx, dy), speed = (fast ? 1900 : 800) * (l ? 1 / l : 0);
+    const k = 1 - Math.exp(-dt / (l ? 0.12 : 0.16));
+    vel.x += (dx * speed - vel.x) * k; vel.y += (dy * speed - vel.y) * k;
+    if (!l && Math.hypot(vel.x, vel.y) < 6) { vel.x = vel.y = 0; plast = 0; if (panning) { panning = false; map.fire('moveend'); } return; }
+    if (!panning) { inFrame = true; map._stop(); inFrame = false; halt(); map.fire('movestart'); panning = true; }
+    carry.x += vel.x * dt; carry.y += vel.y * dt;
+    const ox = Math.round(carry.x), oy = Math.round(carry.y); carry.x -= ox; carry.y -= oy;
+    if (ox || oy) {
+      map._rawPanBy(L.point(ox, oy));
+      if (map.options.maxBounds && map._limitCenter) {   // stop at the edge of the world
+        const c = map.getCenter(), c2 = map._limitCenter(c, map.getZoom(), map.options.maxBounds);
+        if (!c.equals(c2)) { const d = map.project(c2).subtract(map.project(c)).round(); map._rawPanBy(d); if (d.x) vel.x = 0; if (d.y) vel.y = 0; }
+      }
+      map.fire('move');
+    }
+    praf = requestAnimationFrame(panFrame);
+  }
+  function key(code, dir, down, shift) {
+    fast = shift;
+    if (down) held.set(code, dir); else held.delete(code);
+    if (!praf) { plast = 0; praf = requestAnimationFrame(panFrame); }
+  }
+  window.addEventListener('blur', () => held.clear());
+  return { zoomBy, halt, key, keysHeld: () => held.size };
+}
+// the wheel, double-click and the zoom buttons, for every map on the page: smooth
+L.Map.addInitHook(function () { this._nav = smoothNav(this); });
+L.Map.ScrollWheelZoom.prototype._onWheelScroll = function (e) {
+  const map = this._map, d = L.DomEvent.getWheelDelta(e);
+  // a trackpad pinch comes as small steps with Ctrl held; a wheel's notch is about 100
+  map._nav.zoomBy(d * (e.ctrlKey ? 1 / 40 : 1 / 230), map.mouseEventToContainerPoint(e));
+  L.DomEvent.stop(e);
+};
+L.Map.DoubleClickZoom.prototype._onDoubleClick = function (e) { this._map._nav.zoomBy(e.originalEvent.shiftKey ? -1 : 1, e.containerPoint); };
+L.Control.Zoom.prototype._zoomIn = function (e) { if (!this._disabled) this._map._nav.zoomBy(this._map.options.zoomDelta * (e.shiftKey ? 3 : 1)); };
+L.Control.Zoom.prototype._zoomOut = function (e) { if (!this._disabled) this._map._nav.zoomBy(-this._map.options.zoomDelta * (e.shiftKey ? 3 : 1)); };
+
 const map = L.map('map', {
-  crs: L.CRS.Simple, zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 90,
+  crs: L.CRS.Simple, zoomSnap: 0, zoomDelta: 1, keyboard: false,
+  inertia: true, inertiaDeceleration: 1900, inertiaMaxSpeed: 4000, easeLinearity: 0.15,
   maxZoom: NATIVE + 1, attributionControl: false, zoomControl: false, maxBoundsViscosity: 0.8,
   doubleClickZoom: true
 });
@@ -240,6 +323,7 @@ const TILE_URL = TILES + 'tiles/{z}/{y}/{x}' + INFO.ext + (SERVER && SERVER.tile
 // 0.2 s pop), and once the map stops, the next level in and out is fetched quietly so a zoom finds it ready.
 const TILE_FADE = 480;
 const SmoothTiles = L.TileLayer.extend({
+  createTile(coords, done) { const t = L.TileLayer.prototype.createTile.call(this, coords, done); t.decoding = 'async'; return t; },   // (decoded off the main thread: no hitch as they arrive)
   _updateOpacity() {
     if (!this._map) return;
     L.DomUtil.setOpacity(this._container, this.options.opacity);
@@ -271,7 +355,8 @@ const backdrop = L.tileLayer(TILE_URL, {
 const tileLayer = new SmoothTiles(TILE_URL, {
   tileSize: TILE, bounds, noWrap: true, minZoom: 0, maxNativeZoom: NATIVE, maxZoom: NATIVE + 1,
   keepBuffer: 8,         // tiles kept round the view (in tile rows), so panning back finds them still there
-  updateInterval: 80     // while dragging, ask for the newly uncovered tiles this often (Leaflet's default is 200 ms)
+  updateInterval: 80,    // while dragging, ask for the newly uncovered tiles this often (Leaflet's default is 200 ms)
+  updateWhenZooming: false   // a smooth zoom scales the tiles it has; the sharp ones for where it stops come when it stops
 }).setZIndex(1).on('tileload', () => { tilesLoaded++; $('#notice').hidden = true; })
   .on('tileerror', () => { if (!tilesLoaded) $('#notice').hidden = false; })
   .addTo(map);
@@ -315,12 +400,43 @@ function applyView(v) {
   map.setMaxBounds(bounds.pad(Math.max(0, Math.min(1, +viewOpts.pan || 0)) + (+viewOpts.zoomOut ? 0.5 * viewOpts.zoomOut : 0)));
 }
 
+// (on the map itself, not the page, so a change only restyles the map; and only once a zoom comes to rest, since
+// resizing every icon and its glow mid-glide is what made zooming stutter)
+let iconK = null;
 function setIconScale(z) {
-  const k = Math.pow(2, (z - NATIVE) * ICON_GROWTH);
-  document.documentElement.style.setProperty('--k', k.toFixed(4));
+  const k = Math.pow(2, (z - NATIVE) * ICON_GROWTH).toFixed(4);
+  if (k === iconK) return; iconK = k;
+  map.getContainer().style.setProperty('--k', k);
 }
 map.on('zoomanim', e => setIconScale(e.zoom));
 map.on('zoomend', () => { setIconScale(map.getZoom()); applyVisibility(); drawReadout(); });
+// while a place is being dragged, the closed hand (see style.css)
+L.Marker.addInitHook(function () { this.on('dragstart', () => document.body.classList.add('drag-place')); this.on('dragend', () => document.body.classList.remove('drag-place')); });
+// image overlays (the nations' colour fill) are moved and scaled while the map glides, not resized every frame
+{ const reset = L.ImageOverlay.prototype._reset;
+  L.ImageOverlay.prototype._reset = function (e) {
+    const m = this._map;
+    if (e && e.flyTo && this._image && this._z0 != null && m) {
+      L.DomUtil.setTransform(this._image, m.latLngToLayerPoint(this._bounds.getNorthWest()), m.getZoomScale(m.getZoom(), this._z0));
+      return;
+    }
+    if (m) this._z0 = m.getZoom();
+    return reset.apply(this, arguments);
+  }; }
+// while the map glides, places that are hidden, or off the screen (and were last frame too), aren't moved frame by
+// frame: with hundreds of places that's most of a frame's work. They all catch up when it settles.
+{ const upd = L.Marker.prototype.update;
+  L.Marker.prototype.update = function () {
+    const m = this._map;
+    if (m && m._gliding && this._icon) {
+      if (this._icon.classList.contains('hid')) return this;
+      if (m._gbStamp !== m._glideStamp) { m._gb = m.getBounds().pad(0.3); m._gbStamp = m._glideStamp; }
+      const inside = m._gb.contains(this._latlng);
+      if (!inside && this._outside) return this;
+      this._outside = !inside;
+    } else this._outside = false;
+    return upd.apply(this, arguments);
+  }; }
 setIconScale(map.getZoom());
 
 // Readout of the map pixel under the cursor (and the nation there, when borders are showing).
@@ -2020,7 +2136,7 @@ void main() {
 }`;
 
 const OceanLayer = L.Layer.extend({
-  options: { padding: 0.2, fps: 30 },
+  options: { padding: 0.12, fps: 30 },   // (a smaller margin to draw: it's redrawn whenever the view runs past it)
   onAdd(m) {
     const c = this._canvas = L.DomUtil.create('canvas', 'ocean leaflet-zoom-animated');
     m.getPane('ocean').appendChild(c);
@@ -2029,6 +2145,8 @@ const OceanLayer = L.Layer.extend({
     m.on('moveend resize viewreset', this._reset, this);
     m.on('zoomanim', this._anim, this);
     m.on('zoom', this._onZoom, this);
+    m.on('move', this._cover, this);
+    m.on('movestart', this._go, this); m.on('moveend', this._halt, this);
     this._reset();
     const loop = t => { this._raf = requestAnimationFrame(loop); if (view === 'map') this._frame(t); };
     this._raf = requestAnimationFrame(loop);
@@ -2036,6 +2154,7 @@ const OceanLayer = L.Layer.extend({
   onRemove(m) {
     cancelAnimationFrame(this._raf);
     m.off('moveend resize viewreset', this._reset, this); m.off('zoomanim', this._anim, this); m.off('zoom', this._onZoom, this);
+    m.off('move', this._cover, this); m.off('movestart', this._go, this); m.off('moveend', this._halt, this);
     L.DomUtil.remove(this._canvas);
   },
   _init(gl) {
@@ -2101,9 +2220,9 @@ const OceanLayer = L.Layer.extend({
     this._center = m.getCenter(); this._zoom = m.getZoom();
     L.DomUtil.setPosition(this._canvas, min);
     const dpr = this._dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    const c = this._canvas;
-    c.width = Math.max(1, Math.round(full.x * dpr)); c.height = Math.max(1, Math.round(full.y * dpr));
-    c.style.width = full.x + 'px'; c.style.height = full.y + 'px';
+    const c = this._canvas, cw = Math.max(1, Math.round(full.x * dpr)), ch = Math.max(1, Math.round(full.y * dpr));
+    if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch; c.style.width = full.x + 'px'; c.style.height = full.y + 'px'; }   // (a new size clears and reallocates it: only when it changes)
+    this._full = full;
     const tl = toPixel(m.layerPointToLatLng(min));
     this._origin = [tl.x, tl.y]; this._wpp = Math.pow(2, NATIVE - this._zoom);
     this._draw(performance.now() / 1000);
@@ -2116,9 +2235,19 @@ const OceanLayer = L.Layer.extend({
     const offset = viewHalf.multiplyBy(-scale).add(centre).subtract(m._getNewPixelOrigin(e.center, e.zoom));
     L.DomUtil.setTransform(this._canvas, offset, scale);
   },
-  _onZoom() { this._anim({ center: this._map.getCenter(), zoom: this._map.getZoom() }); },
+  _onZoom() { this._anim({ center: this._map.getCenter(), zoom: this._map.getZoom() }); this._cover(); },
+  // while the map moves: if the view has run past the canvas (a long drag or glide, or zoomed out a long way), or zoomed
+  // in so far it's gone soft, it's drawn afresh round where the view is now
+  _cover() {
+    const m = this._map; if (!m || !this._origin || !this._full || m._animatingZoom) return;
+    const z = m.getZoom(), s = m.getSize(), a = toPixel(m.containerPointToLatLng([0, 0])), b = toPixel(m.containerPointToLatLng([s.x, s.y]));
+    const o = this._origin, w = this._full.x * this._wpp, h = this._full.y * this._wpp;
+    if (a.x < o[0] || a.y < o[1] || b.x > o[0] + w || b.y > o[1] + h || z > this._zoom + 0.75) this._reset();
+  },
+  _go() { this._moving = true; },
+  _halt() { this._moving = false; },
   _frame(t) {
-    if (document.hidden || t - (this._last || 0) < 1000 / this.options.fps) return;
+    if (document.hidden || t - (this._last || 0) < 1000 / (this._moving ? 12 : this.options.fps)) return;   // (the waves slow while the map moves: it's busy)
     this._last = t; this._draw(t / 1000);
   },
   _draw(time) {
@@ -2146,15 +2275,18 @@ function landDistTex(land) {
 // smooth while it loads (on the page itself if workers aren't available). Resolves { fresh, rgba, tex } and updates land.v.
 function analyseLand(land, opts) {
   const job = (L, o) => {
+    const v0 = o.fresh ? new Uint8Array(L.v) : null;   // (before fresh water is filled in as land)
     const fr = o.fresh ? findFreshwater(L, o.width) : null;
-    return { v: L.v, fresh: L.fresh || null, rgba: fr ? fr.rgba : null, tex: o.tex ? landDistTex(L) : null };
+    let net = null;
+    if (fr && L.fresh) try { net = traceRivers(L, v0, L.fresh); } catch (e) { net = null; }
+    return { v: L.v, fresh: L.fresh || null, rgba: fr ? fr.rgba : null, tex: o.tex ? landDistTex(L) : null, net };
   };
   const onPage = () => new Promise(res => setTimeout(() => res(job(land, opts)), 0));
   if (!window.Worker || location.protocol === 'file:') return onPage();
   return new Promise(resolve => {
     let wk;
     try {
-      const src = [edt2d, findFreshwater, landDistTex].map(f => f.toString()).join('\n') +
+      const src = [edt2d, findFreshwater, traceRivers, landDistTex].map(f => f.toString()).join('\n') +
         `\nconst job = ${job.toString()};\nonmessage = e => { const r = job(e.data.land, e.data.opts); postMessage(r, [r.v.buffer].concat(r.fresh ? [r.fresh.buffer] : [], r.rgba ? [r.rgba.buffer] : [], r.tex ? [r.tex.buffer] : [])); };`;
       wk = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
     } catch (e) { return onPage().then(resolve); }
@@ -3131,6 +3263,22 @@ document.addEventListener('keydown', e => {
 
 // ───────────────────────── keyboard and buttons ─────────────────────────
 
+// Panning with the arrow keys (and WASD, when not editing), and zooming with + and −. While editing, the arrows nudge
+// the place that's picked instead.
+const PANKEYS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1], KeyA: [-1, 0], KeyD: [1, 0], KeyW: [0, -1], KeyS: [0, 1] };
+function panKeyOK(e) {
+  if (view !== 'map' || isTyping() || e.ctrlKey || e.metaKey || e.altKey) return false;
+  if (/^Key/.test(e.code) && (editMode || rulerOn)) return false;
+  if (editMode && /^Arrow/.test(e.code) && (selectedId || multiSel.size)) return false;
+  return !!PANKEYS[e.code];
+}
+document.addEventListener('keydown', e => {
+  if (e.defaultPrevented) return;
+  if (panKeyOK(e)) { e.preventDefault(); map._nav.key(e.code, PANKEYS[e.code], true, e.shiftKey); return; }
+  if (view === 'map' && !isTyping() && !e.ctrlKey && !e.metaKey && !e.altKey && ['+', '=', '-', '_'].includes(e.key)) { e.preventDefault(); map._nav.zoomBy(e.key === '+' || e.key === '=' ? 0.75 : -0.75); }
+});
+document.addEventListener('keyup', e => { if (PANKEYS[e.code]) map._nav.key(e.code, null, false, e.shiftKey); });
+
 document.addEventListener('keydown', e => {
   if (view === 'wiki') {   // map shortcuts are off while reading
     if (e.key === '/' && !isTyping()) { e.preventDefault(); $('#search').focus(); }
@@ -3202,8 +3350,16 @@ MT = window.ValanarMapTools ? window.ValanarMapTools({
   map, L, h, toast, NATIVE, INFO, toLatLng, toPixel, Land, smooth, pathLength, uid, isTyping, canEdit: CAN_EDIT,
   get data() { return data; }, change, panelShell, renderPanel,
   openPanel: (m, stay) => { if (stay && panelMode === m) renderPanel(); else { if (placing) stopPlacing(); openPanel(m); } },
-  editMode: () => editMode, rulerOn: () => rulerOn, ocean: () => ocean, fmtTravel,
+  editMode: () => editMode, rulerOn: () => rulerOn, ocean: () => ocean, fmtTravel, panelMode: () => panelMode,
   pages: () => pages, findPage, wikiHref, applyView,
+  names: () => NAMES,
+  // the nation at a map pixel: from the borders when they've been worked out, else the nearest place's
+  nationNear: (x, y) => {
+    const n = pol && nationAt(x, y); if (n) return n.name;
+    let best = '', bd = 1800 * 1800;
+    for (const m of data.markers) { if (!isFinite(m.x) || !isFinite(m.y)) continue; const d = (m.x - x) ** 2 + (m.y - y) ** 2; if (d < bd) { const nm = nationOfMarker(m); if (nm) { bd = d; best = nm; } } }
+    return best;
+  },
   hint: msg => { let el = $('#mthint'); if (!msg) { if (el) el.remove(); return; } if (!el) { el = h('div', { id: 'mthint' }); document.body.append(el); } el.textContent = msg; },
   unitsChanged: () => { if (rulerOn) drawRuler(); },
   onLook: () => { try { if (SKY && SKY.calendar) SKY.setCalendar(SKY.calendar); } catch (e) { /* the sky isn't made yet */ } if (AMB) AMB.refresh(); }
@@ -3218,6 +3374,7 @@ loadLand(() => {
     .then(r => {
       schedulePolitical();
       if (MT) MT.landChanged();
+      if (MT && r.net) MT.setRivers(r.net);
       if (AMB) AMB.landReady();
       if (ocean) { ocean.setLand(Land, r.tex); if (r.rgba) ocean.setFresh(Land, r.rgba); if (MT) MT.applyLook(); }
     })
@@ -3327,6 +3484,323 @@ function findFreshwater(land, width) {
   for (let i = 0; i < w * h; i++) if (fresh[i]) v[i] = 255;   // borders and the coast ignore rivers and lakes
   land.fresh = fresh;
   return { rgba };
+}
+// River network from the fresh-water mask (runs in the land worker, after findFreshwater). Self-contained: it's sent
+// to the worker as source text, so it can't use anything outside itself.
+// land: { w, h, scale }, v0: the land mask before fresh water was filled in (0 water … 255 land), fresh: 1 = fresh water.
+// Returns { rivers, lakes }: each river runs source → mouth as one or more pieces of map-pixel points [x0, y0, x1, y1, …];
+// into: { sea } | { lake: id } | { river: index } | {} ; from: { lake: id } when it flows out of a lake.
+function traceRivers(land, v0, fresh) {
+  const { w, h, scale } = land, N = w * h;
+  const SEA = i => v0[i] < 250 && !fresh[i];
+  const cells = []; for (let i = 0; i < N; i++) if (fresh[i]) cells.push(i);
+  if (!cells.length) return { rivers: [], lakes: [] };
+  // ── lakes: fresh water that's wide (a 7×7 block almost all water), grown back to its shores; small ones are river
+  const core = new Uint8Array(N);
+  for (const i of cells) {
+    const x = i % w, y = (i / w) | 0; if (x < 3 || y < 3 || x >= w - 3 || y >= h - 3) continue;
+    let c = 0; for (let oy = -3; oy <= 3; oy++) { const r = (y + oy) * w + x; for (let ox = -3; ox <= 3; ox++) if (fresh[r + ox]) c++; }
+    if (c >= 46) core[i] = 1;
+  }
+  const lakeCell = new Uint8Array(N);
+  for (const i of cells) {
+    if (!core[i]) continue;
+    const x = i % w, y = (i / w) | 0;
+    for (let oy = -3; oy <= 3; oy++) for (let ox = -3; ox <= 3; ox++) { const j = (y + oy) * w + x + ox; if (fresh[j]) lakeCell[j] = 1; }
+  }
+  const lakeId = new Int16Array(N).fill(-1), lakes = [];
+  { const st = [];
+    for (const s of cells) {
+      if (!lakeCell[s] || lakeId[s] >= 0) continue;
+      const id = lakes.length, mine = []; lakeId[s] = id; st.push(s);
+      let sx = 0, sy = 0, sea = false;
+      while (st.length) {
+        const i = st.pop(); mine.push(i); const x = i % w, y = (i / w) | 0; sx += x; sy += y;
+        for (const j of [i - 1, i + 1, i - w, i + w]) { if (j < 0 || j >= N) continue; if (lakeCell[j] && lakeId[j] < 0) { lakeId[j] = id; st.push(j); } else if (SEA(j)) sea = true; }
+      }
+      if (mine.length < 40) { for (const i of mine) { lakeId[i] = -2; lakeCell[i] = 0; } continue; }   // a widening in a river
+      lakes.push({ id, area: mine.length, x: Math.round((sx / mine.length + 0.5) * scale), y: Math.round((sy / mine.length + 0.5) * scale), sea });
+    }
+    for (const i of cells) if (lakeId[i] === -2) lakeId[i] = -1;
+  }
+  // ── the rivers' centrelines: thin the river water to a line one cell wide (Zhang–Suen, then the corners)
+  const sk = new Uint8Array(N);
+  let fg = [];
+  for (const i of cells) { const x = i % w, y = (i / w) | 0; if (!lakeCell[i] && x > 0 && y > 0 && x < w - 1 && y < h - 1) { sk[i] = 1; fg.push(i); } }
+  const nb = i => [sk[i - w], sk[i - w + 1], sk[i + 1], sk[i + w + 1], sk[i + w], sk[i + w - 1], sk[i - 1], sk[i - w - 1]];   // P2…P9
+  for (let changed = true, it = 0; changed && it < 60; it++) {
+    changed = false;
+    for (const pass of [0, 1]) {
+      const del = [];
+      for (const i of fg) {
+        if (!sk[i]) continue;
+        const p = nb(i); let B = 0, A = 0;
+        for (let k = 0; k < 8; k++) { B += p[k]; if (!p[k] && p[(k + 1) & 7]) A++; }
+        if (B < 2 || B > 6 || A !== 1) continue;
+        if (pass === 0 ? (p[0] && p[2] && p[4]) || (p[2] && p[4] && p[6]) : (p[0] && p[2] && p[6]) || (p[0] && p[4] && p[6])) continue;
+        del.push(i);
+      }
+      for (const i of del) sk[i] = 0;
+      if (del.length) changed = true;
+    }
+    fg = fg.filter(i => sk[i]);
+  }
+  // corners left by the thinning: a cell whose neighbours all join up without it goes (so a line is one cell thin)
+  const comps8 = i => {   // pieces the 8 neighbours make among themselves
+    const p = nb(i); let c = 0;
+    const seen = [0, 0, 0, 0, 0, 0, 0, 0];
+    for (let k = 0; k < 8; k++) {
+      if (!p[k] || seen[k]) continue; c++;
+      const st = [k]; seen[k] = 1;
+      while (st.length) {
+        const a = st.pop();
+        for (const b of [(a + 1) & 7, (a + 7) & 7, ...(a & 1 ? [] : [(a + 2) & 7, (a + 6) & 7])]) if (p[b] && !seen[b]) { seen[b] = 1; st.push(b); }
+      }
+    }
+    return c;
+  };
+  const deg = i => { const p = nb(i); let B = 0; for (let k = 0; k < 8; k++) B += p[k]; return B; };
+  for (let pass = 0; pass < 3; pass++) for (const i of fg) if (sk[i] && deg(i) >= 2 && comps8(i) === 1) {
+    const p = nb(i); if (p[0] && p[2] && p[4] && p[6]) continue;   // inside a blob: leave
+    sk[i] = 0;
+  }
+  fg = fg.filter(i => sk[i]);
+  const N8 = [-w, -w + 1, 1, w + 1, w, w - 1, -1, -w - 1];
+  const skn = i => { const o = []; for (const d of N8) if (sk[i + d]) o.push(i + d); return o; };
+  // ── joining gaps: a river's end that points at more river close by (across a break in the drawing) is joined to it
+  const near = (i, r, test) => { const x = i % w, y = (i / w) | 0; for (let oy = -r; oy <= r; oy++) for (let ox = -r; ox <= r; ox++) { const xx = x + ox, yy = y + oy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; if (test(yy * w + xx)) return true; } return false; };
+  const line = (a, b) => { const ax = a % w, ay = (a / w) | 0, bx = b % w, by = (b / w) | 0, steps = Math.max(Math.abs(bx - ax), Math.abs(by - ay));
+    for (let t = 1; t < steps; t++) { const q = Math.round(ay + (by - ay) * t / steps) * w + Math.round(ax + (bx - ax) * t / steps); if (!sk[q]) { sk[q] = 1; fg.push(q); } } };
+  // an end's direction (outwards), from the line a few cells back
+  const endDir = e => {
+    const back = [e]; let prev = -1, cur = e;
+    for (let k = 0; k < 8; k++) { const n = skn(cur).filter(j => j !== prev && !back.includes(j)); if (n.length !== 1) break; prev = cur; cur = n[0]; back.push(cur); }
+    if (back.length < 4) return null;
+    let dx = e % w - cur % w, dy = ((e / w) | 0) - ((cur / w) | 0); const dl = Math.hypot(dx, dy) || 1;
+    return { dx: dx / dl, dy: dy / dl, back };
+  };
+  const free = e => sk[e] && deg(e) === 1 && !near(e, 3, j => SEA(j) || lakeCell[j]);
+  // two loose ends facing each other across a break (a bridge or a town drawn over the river): joined, up to 12 cells
+  { const loose = fg.filter(free), dirs = new Map(); for (const e of loose) dirs.set(e, endDir(e));
+    const grid = new Map(), G = 12, gk = (x, y) => (x / G | 0) + ',' + (y / G | 0);
+    for (const e of loose) { const k = gk(e % w, (e / w) | 0); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(e); }
+    const done = new Set();
+    for (const e of loose) {
+      const de = dirs.get(e); if (!de || done.has(e)) continue;
+      const ex = e % w, ey = (e / w) | 0; let best = -1, bs = Infinity;
+      for (let gy = -1; gy <= 1; gy++) for (let gx = -1; gx <= 1; gx++) for (const f of grid.get(gk(ex + gx * G, ey + gy * G)) || []) {
+        if (f === e || done.has(f)) continue; const df = dirs.get(f); if (!df || df.back.includes(e)) continue;
+        const ox = f % w - ex, oy = ((f / w) | 0) - ey, d = Math.hypot(ox, oy); if (d > G || d < 1) continue;
+        const c1 = (ox * de.dx + oy * de.dy) / d, c2 = -(ox * df.dx + oy * df.dy) / d;
+        if (c1 < 0.5 || c2 < 0.5) continue;
+        const sc = d * (2.2 - c1 - c2); if (sc < bs) { bs = sc; best = f; }
+      }
+      if (best >= 0) { line(e, best); done.add(e); done.add(best); }
+    }
+  }
+  const ends = fg.filter(i => deg(i) === 1);
+  for (const e of ends) {
+    if (!free(e)) continue;
+    const de = endDir(e); if (!de) continue;
+    const { dx, dy, back } = de, ex = e % w, ey = (e / w) | 0;
+    const mine = new Set(back);
+    let best = -1, bs = Infinity;
+    const R = 6;
+    for (let oy = -R; oy <= R; oy++) for (let ox = -R; ox <= R; ox++) {
+      const xx = ex + ox, yy = ey + oy; if (xx < 1 || yy < 1 || xx >= w - 1 || yy >= h - 1) continue;
+      const j = yy * w + xx; if (!sk[j] || mine.has(j)) continue;
+      const d = Math.hypot(ox, oy); if (d < 1.5 || d > R) continue;
+      const cos = (ox * dx + oy * dy) / d; if (cos < 0.45) continue;
+      // along the gap, how much of it is faintly water
+      let wet = 0, n = 0; for (let t = 1; t < d; t += 0.7) { const q = Math.round(ey + oy * t / d) * w + Math.round(ex + ox * t / d); n++; if (v0[q] < 255) wet++; }
+      const score = d * (1.6 - cos) * (n ? 1.4 - wet / n : 1);
+      if (d > 3 && n && wet / n < 0.3) continue;
+      if (score < bs) { bs = score; best = j; }
+    }
+    if (best >= 0) line(e, best);
+  }
+  for (let pass = 0; pass < 2; pass++) for (const i of fg) if (sk[i] && deg(i) >= 2 && comps8(i) === 1) { const p = nb(i); if (p[0] && p[2] && p[4] && p[6]) continue; sk[i] = 0; }
+  fg = fg.filter(i => sk[i]);
+  // ── the graph: nodes are ends and junctions (touching junction cells are one node); edges are the lines between
+  const nodeAt = new Map(), nodes = [];   // cell → node
+  const node = { get: i => nodeAt.has(i) ? nodeAt.get(i) : -1 };
+  const mkNode = (i) => { const id = nodes.length; nodes.push({ id, px: [i], sea: false, lake: -1, edges: [] }); nodeAt.set(i, id); return id; };
+  for (const i of fg) { const d = deg(i); if (d === 1 || d >= 3 || d === 0) { if (node.get(i) >= 0) continue; const id = mkNode(i);
+    if (d >= 3) { const st = [i]; while (st.length) { const a = st.pop(); for (const b of skn(a)) if (node.get(b) < 0 && deg(b) >= 3) { nodeAt.set(b, id); nodes[id].px.push(b); st.push(b); } } } } }
+  const edges = [];
+  const vis = new Uint8Array(N);
+  const walk = (from, first) => {
+    const px = [from, first]; let prev = from, cur = first;
+    while (node.get(cur) < 0) {
+      vis[cur] = 1;
+      const nx = skn(cur).filter(j => j !== prev && !(node.get(j) >= 0 && node.get(j) === node.get(from) && px.length < 3));
+      let next = nx.find(j => node.get(j) >= 0) ?? nx.find(j => !vis[j]);
+      if (next === undefined) break;
+      prev = cur; cur = next; px.push(cur);
+    }
+    return px;
+  };
+  const addEdge = (px) => {
+    const a = node.get(px[0]), b = node.get(px[px.length - 1]);
+    if (a < 0 || b < 0) return;
+    let len = 0; for (let k = 1; k < px.length; k++) { const d = px[k] - px[k - 1]; len += (d === 1 || d === -1 || d === w || d === -w) ? 1 : 1.414; }
+    const id = edges.length; edges.push({ id, a, b, px, len, alive: true }); nodes[a].edges.push(id); if (b !== a) nodes[b].edges.push(id);
+  };
+  for (const n of nodes) for (const p of n.px) for (const q of skn(p)) {
+    if (node.get(q) === n.id) continue;
+    if (node.get(q) >= 0) { if (n.id < node.get(q)) addEdge([p, q]); continue; }
+    if (vis[q]) continue;
+    const px = walk(p, q);
+    if (node.get(px[px.length - 1]) < 0) { const id = mkNode(px[px.length - 1]); void id; }
+    addEdge(px);
+  }
+  // loops with no ends or junctions
+  for (const i of fg) if (!vis[i] && node.get(i) < 0 && sk[i]) { const id = mkNode(i); for (const q of skn(i)) if (!vis[q] && node.get(q) < 0) { const px = walk(i, q); if (node.get(px[px.length - 1]) < 0) mkNode(px[px.length - 1]); addEdge(px); break; } void id; }
+  // where nodes meet the sea or a lake
+  for (const n of nodes) {
+    const i = n.px[0], x = i % w, y = (i / w) | 0;
+    let best = Infinity;
+    for (let oy = -3; oy <= 3; oy++) for (let ox = -3; ox <= 3; ox++) {
+      const xx = x + ox, yy = y + oy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+      const j = yy * w + xx, d = ox * ox + oy * oy;
+      if (SEA(j) && d < best) { best = d; n.sea = true; n.lake = -1; }
+      else if (lakeId[j] >= 0 && lakes[lakeId[j]] && d < best) { best = d; n.lake = lakeId[j]; n.sea = false; }
+    }
+  }
+  const live = n => n.edges.filter(e => edges[e].alive);
+  // ── tidy: short spurs off a river (bumps on its banks) go; then lines through plain bends are joined into one
+  for (let pass = 0; pass < 3; pass++) {
+    for (const e of edges) {
+      if (!e.alive || e.len >= 7) continue;
+      const A = nodes[e.a], B = nodes[e.b];
+      const loose = n => live(n).length === 1 && !n.sea && n.lake < 0;
+      if ((loose(A) && live(B).length >= 3) || (loose(B) && live(A).length >= 3)) e.alive = false;
+    }
+  }
+  for (const e of edges) if (e.alive && e.a === e.b) e.alive = false;
+  // ── lakes join the network: a lake is a node, linked to every river end on its shore
+  const lakeNode = new Map();
+  for (const n of nodes) if (n.lake >= 0 && live(n).length) {
+    if (!lakeNode.has(n.lake)) { const id = nodes.length; nodes.push({ id, px: [], sea: lakes[n.lake].sea, lake: n.lake, isLake: true, edges: [] }); lakeNode.set(n.lake, id); }
+    const L = lakeNode.get(n.lake), id = edges.length;
+    edges.push({ id, a: n.id, b: L, px: [], len: 0, alive: true, link: true }); n.edges.push(id); nodes[L].edges.push(id);
+  }
+  // ── which way the water runs: towards the sea; water that never reaches it ends in its biggest lake, or at its widest end
+  const other = (e, n) => (e.a === n ? e.b : e.a);
+  const comp = new Int32Array(nodes.length).fill(-1); let nc = 0;
+  for (const n of nodes) { if (comp[n.id] >= 0 || !live(n).length) continue; const st = [n.id]; comp[n.id] = nc; while (st.length) { const a = st.pop(); for (const e of live(nodes[a])) { const b = other(edges[e], a); if (comp[b] < 0) { comp[b] = nc; st.push(b); } } } nc++; }
+  const width = i => { const x = i % w, y = (i / w) | 0; let c = 0; for (let oy = -3; oy <= 3; oy++) for (let ox = -3; ox <= 3; ox++) { const xx = x + ox, yy = y + oy; if (xx >= 0 && yy >= 0 && xx < w && yy < h && fresh[yy * w + xx]) c++; } return c; };
+  const outlets = new Set();
+  { const byComp = new Map();
+    for (const n of nodes) if (comp[n.id] >= 0) { if (!byComp.has(comp[n.id])) byComp.set(comp[n.id], []); byComp.get(comp[n.id]).push(n); }
+    for (const list of byComp.values()) {
+      const seas = list.filter(n => n.sea && (n.isLake || live(n).length === 1));
+      if (seas.length) { for (const n of seas) outlets.add(n.id); continue; }
+      const lk = list.filter(n => n.isLake).sort((a, b) => lakes[b.lake].area - lakes[a.lake].area)[0];
+      if (lk) { outlets.add(lk.id); continue; }
+      const endsHere = list.filter(n => live(n).length === 1);
+      const pick = (endsHere.length ? endsHere : list).map(n => [n, width(n.px[0])]).sort((a, b) => b[1] - a[1])[0];
+      if (pick) outlets.add(pick[0].id);
+    }
+  }
+  // distances to the outlets along the water (Dijkstra; a binary heap)
+  const dist = new Float64Array(nodes.length).fill(Infinity), par = new Int32Array(nodes.length).fill(-1);
+  const heap = [];
+  const push = (d, n) => { heap.push([d, n]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => { const t = heap[0], l = heap.pop(); if (heap.length) { heap[0] = l; let i = 0; for (;;) { const a = 2 * i + 1, b = a + 1; let m = i; if (a < heap.length && heap[a][0] < heap[m][0]) m = a; if (b < heap.length && heap[b][0] < heap[m][0]) m = b; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return t; };
+  for (const o of outlets) { dist[o] = 0; push(0, o); }
+  while (heap.length) {
+    const [d, a] = pop(); if (d > dist[a]) continue;
+    for (const e of live(nodes[a])) { const E = edges[e], b = other(E, a), nd = d + E.len + (E.link ? 0.01 : 0); if (nd < dist[b]) { dist[b] = nd; par[b] = e; push(nd, b); } }
+  }
+  // the tree: each node's upstream branches, and the longest way up each
+  const kids = nodes.map(() => []);
+  for (const n of nodes) if (par[n.id] >= 0) kids[other(edges[par[n.id]], n.id)].push(par[n.id]);
+  const order = nodes.filter(n => isFinite(dist[n.id])).sort((a, b) => dist[b.id] - dist[a.id]);
+  const up = new Float64Array(nodes.length);
+  for (const n of order) for (const e of kids[n.id]) up[n.id] = Math.max(up[n.id], up[other(edges[e], n.id)] + edges[e].len);
+  // ── rivers: from each outlet follow the longest branch up; every other branch is a tributary, done the same way.
+  // A big lake ends a river (what flows in ends there; what flows out starts there); a small one is passed through.
+  const BIG = 300;
+  const rivers = [];
+  const cx = i => i % w, cy = i => (i / w) | 0;
+  const pt = i => {   // a centreline cell's middle, nudged to the middle of the water around it
+    const x = cx(i), y = cy(i); let sx = 0, sy = 0, sw = 0;
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) { const j = i + oy * w + ox; const q = fresh[j] ? 255 - Math.min(250, v0[j]) : 0; sx += (x + ox) * q; sy += (y + oy) * q; sw += q; }
+    return sw ? [(sx / sw + 0.5) * scale, (sy / sw + 0.5) * scale] : [(x + 0.5) * scale, (y + 0.5) * scale];
+  };
+  const simplify = (p, eps) => {   // Douglas–Peucker
+    if (p.length < 3) return p;
+    const keep = new Uint8Array(p.length); keep[0] = keep[p.length - 1] = 1;
+    const st = [[0, p.length - 1]];
+    while (st.length) {
+      const [a, b] = st.pop(); let md = 0, mi = -1;
+      const [ax, ay] = p[a], [bx, by] = p[b], L = Math.hypot(bx - ax, by - ay) || 1;
+      for (let k = a + 1; k < b; k++) { const d = Math.abs((bx - ax) * (ay - p[k][1]) - (ax - p[k][0]) * (by - ay)) / L; if (d > md) { md = d; mi = k; } }
+      if (md > eps) { keep[mi] = 1; st.push([a, mi], [mi, b]); }
+    }
+    return p.filter((_, k) => keep[k]);
+  };
+  const queue = [];
+  for (const o of outlets) {
+    const n = nodes[o];
+    if (n.isLake) { for (const e of kids[o]) queue.push({ start: o, first: e, into: n.sea ? { sea: true, lake: n.lake } : { lake: n.lake } }); }
+    else queue.push({ start: o, first: -1, into: n.sea ? { sea: true } : {} });
+  }
+  const used = new Uint8Array(edges.length), owner = new Int32Array(nodes.length).fill(-1);
+  while (queue.length) {
+    const job = queue.shift(), idx = rivers.length;
+    const chain = [];   // edges, mouth → source
+    let cur = job.start, from = null;
+    let e = job.first;
+    if (e < 0) { const k = kids[cur].slice().sort((a, b) => (up[other(edges[b], cur)] + edges[b].len) - (up[other(edges[a], cur)] + edges[a].len)); e = k[0] ?? -1; for (const t of k.slice(1)) queue.push({ start: cur, first: t, into: { river: idx } }); }
+    if (owner[cur] < 0) owner[cur] = idx;
+    while (e >= 0) {
+      chain.push(e); used[e] = 1; cur = other(edges[e], cur); if (owner[cur] < 0) owner[cur] = idx;
+      const n = nodes[cur];
+      if (n.isLake && lakes[n.lake].area >= BIG) { from = { lake: n.lake }; for (const t of kids[cur]) queue.push({ start: cur, first: t, into: { lake: n.lake } }); break; }
+      const k = kids[cur].slice().sort((a, b) => (up[other(edges[b], cur)] + edges[b].len) - (up[other(edges[a], cur)] + edges[a].len));
+      e = k[0] ?? -1;
+      for (const t of k.slice(1)) queue.push({ start: cur, first: t, into: { river: idx } });
+    }
+    // its course, source → mouth, in pieces (a lake it passes through breaks the line)
+    addRiver(chain, job.into, from, idx);
+  }
+  // channels left over (a second mouth, a branch that loops back): each is a stream of its own, out of the river it
+  // leaves and into whatever its lower end meets
+  for (const E of edges) {
+    if (!E.alive || E.link || used[E.id] || E.len < 4) continue;
+    const lo = dist[E.a] <= dist[E.b] ? E.a : E.b, hi = other(E, lo);
+    const into = outlets.has(lo) && nodes[lo].sea ? { sea: true } : owner[lo] >= 0 ? { river: owner[lo] } : nodes[lo].lake >= 0 && lakes[nodes[lo].lake] ? { lake: nodes[lo].lake } : {};
+    const from = owner[hi] >= 0 ? { river: owner[hi] } : null;
+    addRiver([E.id], into, from, rivers.length);
+  }
+  function addRiver(chain, into, from, idx) {
+    const pieces = []; let piece = [], len = 0;
+    for (let c = chain.length - 1; c >= 0; c--) {
+      const E = edges[chain[c]];
+      if (E.link || !E.px.length) { if (piece.length > 1) pieces.push(piece); piece = []; continue; }
+      // which way round: upstream end first
+      const px = dist[E.a] > dist[E.b] ? E.px : E.px.slice().reverse();
+      for (const i of px) { const p = pt(i); if (!piece.length || Math.hypot(p[0] - piece[piece.length - 1][0], p[1] - piece[piece.length - 1][1]) > 0.1) piece.push(p); }
+      len += E.len * scale;
+    }
+    if (piece.length > 1) pieces.push(piece);
+    if (!pieces.length) return;
+    const flat = pieces.map(p => { const s = simplify(p, scale * 0.6); const o = []; for (const q of s) o.push(Math.round(q[0]), Math.round(q[1])); return o; });
+    const f0 = flat[0], fl = flat[flat.length - 1];
+    rivers.push({ i: idx, pieces: flat, len: Math.round(len), into, from, src: [f0[0], f0[1]], mouth: [fl[fl.length - 2], fl[fl.length - 1]],
+      key: `${Math.round(fl[fl.length - 2] / 64)},${Math.round(fl[fl.length - 1] / 64)}:${Math.round(f0[0] / 64)},${Math.round(f0[1] / 64)}` });
+  }
+  // rivers' numbers may have moved (empty ones dropped): put "into" and "from" right, and note each river's tributaries
+  const at = new Map(rivers.map((r, k) => [r.i, k]));
+  for (const r of rivers) {
+    if (r.into.river != null) r.into.river = at.has(r.into.river) ? at.get(r.into.river) : null; if (r.into.river === null) r.into = {};
+    if (r.from && r.from.river != null) { r.from.river = at.has(r.from.river) ? at.get(r.from.river) : null; if (r.from.river === null) r.from = null; }
+  }
+  rivers.forEach((r, k) => { r.i = k; r.trib = []; });
+  for (const r of rivers) if (r.into.river != null) rivers[r.into.river].trib.push(r.i);
+  return { rivers, lakes };
 }
 if (CAN_EDIT) {
   restoreHandle(); offerDraft();
@@ -3522,6 +3996,92 @@ if (window.ValanarArmies && !SCENE) { ARMY = window.ValanarArmies(Object.assign(
 if (window.ValanarArmsShop && HERALD && CAN_EDIT && !SCENE) ARMSHOP = window.ValanarArmsShop(Object.assign({}, PLAY, { armsOf, setArms }));
 { const b = $('#postcardToggle'); if (b) { if (!POSTCARD) b.remove(); else { b.hidden = false; b.addEventListener('click', () => { if (POSTCARD.active()) POSTCARD.close(); else { if (placing) stopPlacing(); POSTCARD.open(); } }); } } }
 for (const [id, panel] of [['reachToggle', 'reach'], ['talesToggle', 'tales']]) { const b = $('#' + id); if (b) { if ((panel === 'reach' && !REACH) || (panel === 'tales' && !TALES)) { b.remove(); continue; } b.hidden = false; b.addEventListener('click', () => { if (placing) stopPlacing(); if (panelMode === 'political') cancelDraw(); openPanel(panel); }); } }
+// ───────────────────────── filters ─────────────────────────
+// A look laid over the whole map for whoever's viewing (kept in this browser): parchment, ink and wash, moonlight, a
+// blood moon, the Feywild… Each is a colour grade of the map's layers (CSS filters, done by the graphics card), some
+// with a tint, darkened edges and a little grain, at any strength. Popups, tooltips and the edit handles are left as
+// they are. The button's on the left, under the others (and "Filters" in the search box).
+const FILTERS = [
+  { id: 'none', name: 'None', f: [] },
+  { id: 'parchment', name: 'Parchment', f: [['sepia', 0.4], ['saturate', 0.85], ['contrast', 1.05], ['brightness', 1.04]], tint: ['#f1d6a0', 'multiply', 0.2], vig: 0.35 },
+  { id: 'antique', name: 'Antique', f: [['sepia', 0.8], ['saturate', 0.75], ['contrast', 0.95], ['brightness', 1.06]], tint: ['#c49553', 'multiply', 0.22], vig: 0.55, grain: 0.2 },
+  { id: 'ink', name: 'Ink & wash', f: [['grayscale', 1], ['contrast', 1.25], ['brightness', 1.06]], vig: 0.25, grain: 0.14 },
+  { id: 'vivid', name: 'Vivid', f: [['saturate', 1.5], ['contrast', 1.1]] },
+  { id: 'watercolour', name: 'Watercolour', f: [['saturate', 0.65], ['contrast', 0.9], ['brightness', 1.1]], tint: ['#fff4e0', 'soft-light', 0.4] },
+  { id: 'spring', name: 'Spring', f: [['saturate', 1.25], ['hue-rotate', 8], ['brightness', 1.05]], tint: ['#d8f5b8', 'soft-light', 0.35] },
+  { id: 'autumn', name: 'Autumn', f: [['sepia', 0.25], ['saturate', 1.3], ['hue-rotate', -12]], tint: ['#e8892f', 'soft-light', 0.38] },
+  { id: 'winter', name: 'Winter', f: [['saturate', 0.5], ['brightness', 1.1], ['contrast', 0.95], ['hue-rotate', -8]], tint: ['#a9cfff', 'soft-light', 0.5] },
+  { id: 'dusk', name: 'Dusk', f: [['brightness', 0.85], ['saturate', 1.15], ['contrast', 1.05]], tint: ['linear-gradient(180deg, #5b3f8c, #ff8a52)', 'soft-light', 0.6], vig: 0.4 },
+  { id: 'moonlight', name: 'Moonlight', f: [['brightness', 0.62], ['saturate', 0.55], ['contrast', 1.1]], tint: ['#3f5f9a', 'multiply', 0.45], vig: 0.5 },
+  { id: 'bloodmoon', name: 'Blood moon', f: [['brightness', 0.7], ['saturate', 0.8], ['contrast', 1.15]], tint: ['#a3221b', 'multiply', 0.45], vig: 0.6 },
+  { id: 'feywild', name: 'Feywild', f: [['saturate', 1.4], ['hue-rotate', 18], ['brightness', 1.05]], tint: ['#7bffcf', 'soft-light', 0.38], vig: 0.3 },
+  { id: 'shadowfell', name: 'Shadowfell', f: [['grayscale', 0.75], ['brightness', 0.72], ['contrast', 1.2]], tint: ['#2b3a4a', 'multiply', 0.35], vig: 0.65, grain: 0.16 },
+  { id: 'noir', name: 'Noir', f: [['grayscale', 1], ['contrast', 1.55], ['brightness', 0.9]], vig: 0.7, grain: 0.22 }
+];
+if (!SCENE) {
+  const FX_ID = { sepia: 0, grayscale: 0, saturate: 1, contrast: 1, brightness: 1, 'hue-rotate': 0, invert: 0 };
+  const fxCss = (f, s) => f.f.map(([fn, v]) => { const x = FX_ID[fn] + (v - FX_ID[fn]) * s; return fn === 'hue-rotate' ? `${fn}(${x.toFixed(1)}deg)` : `${fn}(${x.toFixed(3)})`; }).join(' ') || 'none';
+  let fx = { id: 'none', s: 1 };
+  try { const v = JSON.parse(store.get('valanar-filter') || 'null'); if (v && FILTERS.some(f => f.id === v.id)) fx = { id: v.id, s: Math.max(0, Math.min(1, +v.s || 0)) }; } catch (e) { /* ignore */ }
+  // the overlays, over the map but under its controls: a tint, darker edges, grain
+  const grain = (() => { const c = document.createElement('canvas'); c.width = c.height = 160; const g = c.getContext('2d'), d = g.createImageData(160, 160);
+    for (let i = 0; i < d.data.length; i += 4) { const v = 128 + (Math.random() - 0.5) * 150; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; }
+    g.putImageData(d, 0, 0); return c.toDataURL(); })();
+  const tintEl = h('div', { class: 'fxtint' }), vigEl = h('div', { class: 'fxvig' }), grainEl = h('div', { class: 'fxgrain', style: `background-image:url(${grain})` });
+  const fxLayer = h('div', { class: 'mapfx', hidden: true }, tintEl, vigEl, grainEl);
+  map.getContainer().appendChild(fxLayer);
+  // the map's layers go into one wrapper that takes the filter (one pass for the lot); popups, tooltips and the
+  // editing handles stay outside it, and layers made later are moved in as they appear
+  let wrap = null;
+  const adopt = () => {
+    const mp = map.getPane('mapPane');
+    if (!wrap) { wrap = h('div', { class: 'mapfilter' }); mp.insertBefore(wrap, mp.firstChild); new MutationObserver(adopt).observe(mp, { childList: true }); }
+    const keepOut = new Set(['tooltipPane', 'popupPane', 'poltools', 'peersPane']);
+    for (const [name, el] of Object.entries(map.getPanes())) {
+      if (el === mp || el.parentNode !== mp || keepOut.has(name)) continue;
+      if ((parseInt(el.style.zIndex, 10) || parseInt(getComputedStyle(el).zIndex, 10) || 0) >= 650) continue;
+      wrap.appendChild(el);
+    }
+  };
+  let tray = null;
+  function applyFx() {
+    const f = FILTERS.find(x => x.id === fx.id) || FILTERS[0], on = f.id !== 'none' && fx.s > 0;
+    if (on) adopt();
+    if (wrap) wrap.style.filter = on ? fxCss(f, fx.s) : '';
+    const t = f.tint || [];
+    tintEl.style.background = t[0] || 'none'; tintEl.style.mixBlendMode = t[1] || 'normal'; tintEl.style.opacity = on && t[0] ? (t[2] * fx.s).toFixed(3) : '0';
+    vigEl.style.opacity = on ? ((f.vig || 0) * fx.s).toFixed(3) : '0';
+    grainEl.style.opacity = on ? ((f.grain || 0) * fx.s).toFixed(3) : '0';
+    fxLayer.hidden = !on;
+    fxBtn.classList.toggle('fxon', on);
+    store.set('valanar-filter', JSON.stringify(fx));
+    if (tray) for (const b of tray.querySelectorAll('.fxtile')) b.classList.toggle('on', b.dataset.id === f.id);
+  }
+  function openTray(open) {
+    if (!open) { if (tray) tray.remove(); tray = null; fxBtn.classList.remove('on'); return; }
+    // the previews: the map where you're looking (a small tile of it), in each look
+    const c = toPixel(map.getCenter()), sc = Math.pow(2, NATIVE - BACK_Z);
+    const url = TILE_URL.replace('{z}', BACK_Z).replace('{x}', Math.max(0, Math.floor(c.x / sc / TILE))).replace('{y}', Math.max(0, Math.floor(c.y / sc / TILE)));
+    const strength = h('input', { type: 'range', min: 0, max: 100, value: Math.round(fx.s * 100), oninput: e => { fx.s = +e.target.value / 100; applyFx(); } });
+    tray = h('div', { id: 'fxTray' },
+      h('div', { class: 'fxhead' }, h('b', null, 'Filters'), h('span', { class: 'fxsub' }, 'a look over the whole map, just for you'),
+        h('label', { class: 'fxstr' }, 'Strength', strength),
+        h('button', { class: 'fxx', title: 'Close', onclick: () => openTray(false) }, '×')),
+      h('div', { class: 'fxrow' }, ...FILTERS.map(f => h('button', { class: 'fxtile' + (f.id === fx.id ? ' on' : ''), 'data-id': f.id, onclick: () => { fx.id = f.id; if (!fx.s) { fx.s = 1; strength.value = 100; } applyFx(); } },
+        h('span', { class: 'fxprev' }, h('img', { src: url, alt: '', draggable: 'false', style: `filter:${fxCss(f, 1)}`, onerror: e => { e.target.style.visibility = 'hidden'; } }),
+          f.tint ? h('span', { class: 'fxpt', style: `background:${f.tint[0]};mix-blend-mode:${f.tint[1]};opacity:${f.tint[2]}` }) : null,
+          f.vig ? h('span', { class: 'fxpv', style: `opacity:${f.vig}` }) : null),
+        h('span', { class: 'fxname' }, f.name)))));
+    document.body.appendChild(tray); fxBtn.classList.add('on');
+  }
+  const fxBtn = h('button', { id: 'filterToggle', title: 'Filters: a look over the whole map, just for you (parchment, ink, moonlight, the Feywild…)', onclick: () => openTray(!tray) });
+  fxBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="9.5" r="5.5"/><circle cx="15" cy="9.5" r="5.5"/><circle cx="12" cy="14.8" r="5.5"/></svg>';
+  { const lt = $('#lookToggle'); if (lt && lt.parentNode) lt.parentNode.insertBefore(fxBtn, lt); }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && tray && !isTyping()) openTray(false); });
+  applyFx();
+  addAction({ label: 'Filters', hint: 'A look over the whole map: parchment, ink and wash, moonlight, a blood moon…', keys: 'filter filters look colour color sepia parchment night noir moonlight winter autumn feywild shadowfell grade', icon: fxBtn.innerHTML, run: () => { if (view !== 'map') { history.pushState(null, '', '#/map'); showMap(); } setTimeout(() => openTray(true), 80); } });
+}
+
 // ── things to do, by name: the search box finds them, and Ctrl+K lists them all
 if (!SCENE) {
   const onMap = fn => () => { const was = view === 'map'; if (!was) { history.pushState(null, '', '#/map'); showMap(); } setTimeout(fn, was ? 0 : 80); };
@@ -3591,7 +4151,7 @@ if (SERVER) {
 // for testing and the console
 route();
 
-window.valanarMap = { syncMarkers, amb: AMB, play: { TALES, WAYF, REACH, NAMES, PRESENCE, POSTCARD }, map, wiki: { get pages() { return pages; }, findPage, showWiki, get page() { return wikiPage; } }, get data() { return data; }, get pol() { return pol; }, Land, toLatLng, toPixel, setEditMode, connectFolder, saveNow, serialise, computePolitical, openPanel };
+window.valanarMap = { syncMarkers, amb: AMB, get tools() { return MT; }, play: { TALES, WAYF, REACH, NAMES, PRESENCE, POSTCARD }, map, wiki: { get pages() { return pages; }, findPage, showWiki, get page() { return wikiPage; } }, get data() { return data; }, get pol() { return pol; }, Land, toLatLng, toPixel, setEditMode, connectFolder, saveNow, serialise, computePolitical, openPanel };
 // The table (this page inside it) works the map from outside: edit mode and the party's tokens.
 window.VALANAR = { get ambience() { return AMB; }, canEdit: CAN_EDIT, setEditMode: on => { if (CAN_EDIT) setEditMode(!!on); }, get editMode() { return editMode; }, map, toLatLng, toPixel, dragRuler,
   atlas: ATLAS, size: { w: INFO.width, h: INFO.height }, native: NATIVE, setFogTest: fn => { fogTest = fn || null; applyVisibility(); },

@@ -295,20 +295,19 @@ window.ValanarMapTools = function (ctx) {
   const SVGNS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(SVGNS, 'svg'); svg.setAttribute('class', 'namesvg');
   namesPane.append(svg);
-  let zooming = false;
-  map.on('zoomstart', () => { zooming = true; svg.style.visibility = 'hidden'; });
-  map.on('zoomend', () => { zooming = false; svg.style.visibility = ''; drawNames(); drawRoutes(); });
-  map.on('moveend resize', () => drawNames());
-  map.on('move', () => { if (!zooming) placeSvg(); });
-  let svgOrigin = null;
-  function placeSvg() {
-    const s = map.getSize(), tl = map.containerPointToLayerPoint([0, 0]);
-    L.DomUtil.setPosition(svg, tl);
-    svg.setAttribute('width', s.x); svg.setAttribute('height', s.y);
-    // drawn in layer coordinates relative to the top left when last drawn; panning just moves the svg
-    if (svgOrigin) svg.setAttribute('viewBox', `${tl.x - svgOrigin.x} ${tl.y - svgOrigin.y} ${s.x} ${s.y}`);
-    return tl;
+  // The names are drawn for the view as it stood; while the map glides (a smooth zoom or pan, frame by frame, or
+  // Leaflet's own animated zoom) the drawing is moved and scaled to match, and drawn afresh once it comes to rest.
+  let drawnAt = null, animZoom = false;   // drawnAt: { z, o: the view's top left, in pixels at zoom z }
+  svg.classList.add('leaflet-zoom-animated');
+  function fitSvg(z1, po1) {
+    if (!drawnAt) return;
+    const s = map.getZoomScale(z1, drawnAt.z), x = s * drawnAt.o.x - po1.x, y = s * drawnAt.o.y - po1.y;
+    svg.style.transform = `translate3d(${x}px,${y}px,0) scale(${s})`;
   }
+  map.on('zoom move', () => fitSvg(map.getZoom(), map.getPixelOrigin()));
+  map.on('zoomanim', e => { animZoom = true; fitSvg(e.zoom, map._getNewPixelOrigin(e.center, e.zoom)); });
+  map.on('zoomend', () => { animZoom = false; drawNames(); drawRoutes(); });
+  map.on('moveend resize viewreset', () => drawNames());
   const curveD = (pts, close) => {
     if (pts.length < 3) return 'M' + pts.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L');
     const sp = smooth(pts, 14);
@@ -317,8 +316,11 @@ window.ValanarMapTools = function (ctx) {
   let drawT = 0;
   function drawNames() { if (!drawT) drawT = requestAnimationFrame(() => { drawT = 0; renderNames(); }); }
   function renderNames() {
-    if (zooming) return;
-    const tl = placeSvg(); svgOrigin = tl; svg.setAttribute('viewBox', `0 0 ${map.getSize().x} ${map.getSize().y}`);
+    if (animZoom) return;
+    const tl = map.containerPointToLayerPoint([0, 0]), sz = map.getSize();
+    drawnAt = { z: map.getZoom(), o: tl.add(map.getPixelOrigin()) };
+    svg.style.transform = `translate3d(${tl.x}px,${tl.y}px,0)`;
+    svg.setAttribute('width', sz.x); svg.setAttribute('height', sz.y); svg.setAttribute('viewBox', `0 0 ${sz.x} ${sz.y}`);
     while (svg.firstChild) svg.firstChild.remove();
     const z = map.getZoom(), k = Math.pow(2, z - NATIVE), editing = ctx.editMode();
     const lk = look(), fontStack = lk.labels.font || getComputedStyle(document.documentElement).getPropertyValue('--serif') || 'Georgia, serif';
@@ -362,7 +364,10 @@ window.ValanarMapTools = function (ctx) {
       const t = put(lb.pts, lb.text, { size: clamp(size, 7, 130), spacing: num(lval(lb, 'spacing'), 0.2), italic: !!lval(lb, 'italic'), caps: !!lval(lb, 'caps'),
         color: lval(lb, 'color'), opacity: num(lval(lb, 'opacity'), 0.8) * (visible ? 1 : 0.4), halo: lval(lb, 'halo') === false || look().labels.halo === false ? null : '#f2ecd9', haloOpacity: 0.35, weight: lb.kind === 'ocean' || lb.kind === 'sea' ? 500 : 600,
         cls: (editing ? 'edit' : '') + (picked(lb.id) && editing ? ' sel' : '') });
-      if (t && editing) t.addEventListener('click', e => { e.stopPropagation(); if (mode) return mapClick(map.mouseEventToLatLng(e)); pickName(lb.id, e.ctrlKey || e.metaKey); selRoute = null; ctx.openPanel('names', true); ctx.renderPanel(); drawRoutes(); });
+      if (t && editing) {
+        t.addEventListener('click', e => { e.stopPropagation(); if (mode) return mapClick(map.mouseEventToLatLng(e)); pickName(lb.id, e.ctrlKey || e.metaKey); selRoute = null; if (lb.kind === 'river') { riverSel = riverOfLabel(lb.id); showHi(); } ctx.openPanel('names', true); ctx.renderPanel(); drawRoutes(); });
+        if (lb.kind === 'river' && net) { t.addEventListener('mouseenter', () => { riverHi = riverOfLabel(lb.id); showHi(); }); t.addEventListener('mouseleave', () => { riverHi = -1; showHi(); }); }
+      }
     }
     // routes' names along their lines
     for (const r of routes()) {
@@ -383,7 +388,7 @@ window.ValanarMapTools = function (ctx) {
   const busy = () => !!mode;
   function setMode(m, extra) {
     mode = m; draft = m ? Object.assign({ pts: [], cursor: null }, extra || {}) : null;
-    document.body.classList.toggle('mt-drawing', !!m);
+    document.body.classList.toggle('mt-drawing', !!m); document.body.dataset.mtmode = m || '';
     map.doubleClickZoom[m ? 'disable' : 'enable']();
     hint();
     drawNames(); ctx.renderPanel();
@@ -442,6 +447,337 @@ window.ValanarMapTools = function (ctx) {
     selRoute = r.id; selLabel = null; ctx.openPanel('routes', true); drawRoutes();
   }
   const dedupe = pts => pts.filter((p, i) => !i || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 2);
+
+  // ───────────────────────── rivers ─────────────────────────
+  // The river network, traced from the map's own water as it loads (app.js traceRivers): every river from its source to
+  // its mouth, what it ends in (the sea, a lake, another river) and the streams that feed it. Editors can show it as
+  // coloured lines; pointing at a river (on the map, in the list, or at its name) lights up the whole of it: where it
+  // rises, where it ends and in what, and its tributaries. "Name the rivers" names every river long enough, in the
+  // style of the land it runs through (the Name Forge), and sets the name along it; a name is a river name like any
+  // other (Names), linked to its river so it can be set along it again.
+  let net = null, riverOn = false, riverHi = -1, riverSel = -1, rivLL = [];
+  try { riverOn = localStorage.getItem('valanar-rivers-on') === '1'; } catch (e) { /* private window */ }
+  { const rp = map.createPane('rivers'); rp.style.zIndex = 392; rp.style.pointerEvents = 'none'; }   // (it only catches the mouse while the network is shown: else borders below couldn't be picked)
+  const rivRender = L.canvas({ pane: 'rivers', tolerance: 7, padding: 0.4 });
+  const rivLayer = L.layerGroup().addTo(map), hiLayer = L.layerGroup().addTo(map);
+  const RIV_MIN = 500;   // map px: the default shortest river that gets a name
+  const rivMin = () => num(D().settings && D().settings.riverMin, RIV_MIN);
+  const hue = i => (i * 137.508) % 360;
+  const rivColor = i => `hsl(${hue(i).toFixed(0)},70%,42%)`;
+  const ptsOf = flat => { const o = []; for (let k = 0; k < flat.length; k += 2) o.push([flat[k], flat[k + 1]]); return o; };
+  // where a point is nearest a river: distance, and which river
+  function segDist(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy, t = l2 ? clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1) : 0;
+    return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+  }
+  function nearestRiver(x, y, maxD, skip) {
+    let best = -1, bd = maxD;
+    for (const r of net ? net.rivers : []) {
+      if (skip && skip.has(r.i)) continue;
+      for (const f of r.pieces) for (let k = 0; k + 3 < f.length; k += 2) {
+        if (Math.abs(f[k] - x) > bd + 400 && Math.abs(f[k + 2] - x) > bd + 400) continue;
+        const d = segDist(x, y, f[k], f[k + 1], f[k + 2], f[k + 3]); if (d < bd) { bd = d; best = r.i; }
+      }
+    }
+    return best;
+  }
+  // which name goes with which river: a name made for it (it carries the river's key), else a river name lying along it
+  let assoc = new Map(), assocSig = '';
+  function riverNames() {
+    const rl = labels().filter(l => l.kind === 'river');
+    const sig = (net ? net.rivers.length : 0) + '|' + rl.map(l => l.id + ':' + (l.river || '') + ':' + l.pts.map(p => p.join(',')).join(';')).join('|');
+    if (sig === assocSig) return assoc;
+    assoc = new Map(); assocSig = sig;
+    if (!net) return assoc;
+    const byKey = new Map(net.rivers.map(r => [r.key, r.i])), loose = [];
+    for (const lb of rl) { const i = lb.river != null ? byKey.get(lb.river) : undefined; if (i != null && !assoc.has(i)) assoc.set(i, lb); else loose.push(lb); }
+    for (const lb of loose) {
+      const m = lb.pts[Math.floor(lb.pts.length / 2)], taken = new Set(assoc.keys());
+      const i = nearestRiver(m[0], m[1], 260, taken); if (i >= 0) assoc.set(i, lb);
+    }
+    return assoc;
+  }
+  const riverOfLabel = id => { for (const [i, lb] of riverNames()) if (lb.id === id) return i; return -1; };
+  const riverName = i => { const lb = riverNames().get(i); return lb ? lb.text : ''; };
+  function lakeName(id) {
+    const lk = net && net.lakes.find(l => l.id === id); if (!lk) return 'a lake';
+    let best = null, bd = Math.max(900, Math.sqrt(lk.area) * 8 * 2.5);
+    for (const lb of labels()) { if (lb.kind !== 'lake' && lb.kind !== 'bay') continue; const m = lb.pts[Math.floor(lb.pts.length / 2)]; const d = Math.hypot(m[0] - lk.x, m[1] - lk.y); if (d < bd) { bd = d; best = lb; } }
+    return best ? best.text : 'a lake';
+  }
+  function intoText(r) {
+    if (r.into.river != null) return 'into ' + (riverName(r.into.river) || 'another river');
+    if (r.into.lake != null) return 'into ' + lakeName(r.into.lake) + (r.into.sea ? ' (and so the sea)' : '');
+    if (r.into.sea) return 'into the sea';
+    return 'into the ground (it ends here)';
+  }
+  const lenText = r => (+D().settings.milesPerPx ? distText(r.len * D().settings.milesPerPx) : `${Math.round(r.len).toLocaleString()} map px`);
+  const allTribs = i => { const out = []; const st = [...net.rivers[i].trib]; while (st.length) { const t = st.pop(); out.push(t); st.push(...net.rivers[t].trib); } return out; };
+  const riverBounds = i => L.latLngBounds([].concat(...[i, ...allTribs(i)].map(k => rivLL[k] ? rivLL[k].flat() : [])));
+
+  // every stretch of every river, filed by where it lies (cells of 256 map px), for finding the river under the cursor
+  const CELL = 256; let segGrid = null;
+  function indexRivers() {
+    segGrid = new Map();
+    for (const r of net.rivers) {
+      if (r.len < 120) continue;   // (the smallest streams aren't picked out)
+      for (const f of r.pieces) for (let k = 0; k + 3 < f.length; k += 2) {
+        const x0 = Math.floor(Math.min(f[k], f[k + 2]) / CELL), x1 = Math.floor(Math.max(f[k], f[k + 2]) / CELL);
+        const y0 = Math.floor(Math.min(f[k + 1], f[k + 3]) / CELL), y1 = Math.floor(Math.max(f[k + 1], f[k + 3]) / CELL);
+        for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) { const key = gx + ',' + gy; let c = segGrid.get(key); if (!c) segGrid.set(key, c = []); c.push(r.i, f[k], f[k + 1], f[k + 2], f[k + 3]); }
+      }
+    }
+  }
+  function riverAt(x, y, tol) {
+    if (!segGrid) return -1;
+    let best = -1, bd = tol;
+    const gx0 = Math.floor((x - tol) / CELL), gx1 = Math.floor((x + tol) / CELL), gy0 = Math.floor((y - tol) / CELL), gy1 = Math.floor((y + tol) / CELL);
+    for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
+      const c = segGrid.get(gx + ',' + gy); if (!c) continue;
+      for (let k = 0; k < c.length; k += 5) { const d = segDist(x, y, c[k + 1], c[k + 2], c[k + 3], c[k + 4]); if (d < bd) { bd = d; best = c[k]; } }
+    }
+    return best;
+  }
+  // pointing at a river (anyone, any time the map isn't busy): the whole of it glows, with its name
+  const hoverLayer = L.layerGroup().addTo(map);
+  let hovRiver = -1, hovTip = null, hovRaf = 0, hovEvt = null;
+  function setHover(i, latlng) {
+    if (i === hovRiver) { if (hovTip && latlng) hovTip.setLatLng(latlng); return; }
+    hovRiver = i; hoverLayer.clearLayers(); if (hovTip) { map.closeTooltip(hovTip); hovTip = null; }
+    map.getContainer().classList.toggle('over-river', i >= 0);
+    if (i < 0) return;
+    const r = net.rivers[i], o = { renderer: rivRender, interactive: false, lineCap: 'round', lineJoin: 'round' };
+    for (const t of allTribs(i)) if (net.rivers[t].len >= 120) hoverLayer.addLayer(L.polyline(rivLL[t], Object.assign({ color: '#d9f2ff', weight: 3, opacity: 0.35 }, o)));
+    hoverLayer.addLayer(L.polyline(rivLL[i], Object.assign({ color: '#bfe8ff', weight: 11, opacity: 0.32 }, o)));
+    hoverLayer.addLayer(L.polyline(rivLL[i], Object.assign({ color: '#f2fbff', weight: 2.6, opacity: 0.9 }, o)));
+    const nm = riverName(i);
+    hovTip = L.tooltip({ className: 'rivtip', direction: 'top', offset: [0, -14], opacity: 1 })
+      .setLatLng(latlng).setContent(nm ? `<b>${esc(nm)}</b><br>${esc(lenText(r))}, flowing ${esc(intoText(r))}` : `A river, ${esc(lenText(r))}, flowing ${esc(intoText(r))}`);
+    map.openTooltip(hovTip);
+  }
+  map.on('mousemove', e => {
+    hovEvt = e; if (hovRaf) return;
+    hovRaf = requestAnimationFrame(() => {
+      hovRaf = 0; const ev = hovEvt;
+      if (!net || !ev || mode || map._gliding || map._animatingZoom || (map.dragging && map.dragging.moving()) || (riverOn && ctx.editMode()) || document.body.classList.contains('placing') || document.body.classList.contains('ruling')) return setHover(-1);
+      const p = toPixel(ev.latlng), wpp = Math.pow(2, NATIVE - map.getZoom());
+      setHover(riverAt(p.x, p.y, 9 * wpp), ev.latlng);
+    });
+  });
+  map.on('mouseout movestart zoomstart', () => setHover(-1));
+  map.on('click', () => { if (hovRiver >= 0 && ctx.editMode() && !mode && ctx.panelMode && ctx.panelMode() === 'names') { const i = hovRiver; setHover(-1); selectRiver(i, false); } });   // (with Names open, a click picks the river)
+
+  function setRivers(n) {
+    net = n && Array.isArray(n.rivers) ? n : null;
+    rivLL = net ? net.rivers.map(r => r.pieces.map(f => ptsOf(f).map(p => toLatLng(p[0], p[1])))) : [];
+    segGrid = null; if (net) indexRivers(); setHover(-1);
+    assocSig = ''; riverSel = -1; riverHi = -1;
+    drawRivers();
+    if (ctx.editMode()) ctx.renderPanel();
+  }
+  function drawRivers() {
+    rivLayer.clearLayers();
+    map.getPane('rivers').style.pointerEvents = net && riverOn && ctx.editMode() ? '' : 'none';
+    if (net && riverOn && ctx.editMode()) {
+      const min = rivMin(), names = riverNames();
+      // the smallest first, so the big rivers lie on top
+      const order = net.rivers.map(r => r.i).sort((a, b) => net.rivers[a].len - net.rivers[b].len);
+      for (const i of order) {
+        const r = net.rivers[i], big = r.len >= min;
+        const line = L.polyline(rivLL[i], { renderer: rivRender, color: rivColor(i), weight: big ? 3.2 : 1.8, opacity: big || names.has(i) ? 0.95 : 0.6, lineCap: 'round', lineJoin: 'round', interactive: true, bubblingMouseEvents: false });
+        line.on('mouseover', e => { riverHi = i; showHi(); line.bindTooltip(tipText(i), { sticky: true, className: 'rivtip', direction: 'top', offset: [0, -8] }).openTooltip(e.latlng); });
+        line.on('mouseout', () => { line.unbindTooltip(); riverHi = -1; showHi(); });
+        line.on('click', e => { L.DomEvent.stop(e); selectRiver(i, false); });
+        rivLayer.addLayer(line);
+      }
+    }
+    showHi();
+  }
+  const tipText = i => { const r = net.rivers[i]; return `<b>${esc(riverName(i) || 'An unnamed river')}</b><br>${esc(lenText(r))}, ${esc(intoText(r))}${r.trib.length ? ` · ${r.trib.length} tributar${r.trib.length === 1 ? 'y' : 'ies'}` : ''}`; };
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  // the lit-up river: its course in gold, its tributaries in blue, the river it joins faint, its source and its mouth marked
+  function showHi() {
+    hiLayer.clearLayers();
+    const i = riverHi >= 0 ? riverHi : riverSel;
+    if (!net || i < 0 || !net.rivers[i] || !ctx.editMode()) return;
+    const r = net.rivers[i], o = { renderer: rivRender, interactive: false, lineCap: 'round', lineJoin: 'round' };
+    if (r.into.river != null && rivLL[r.into.river]) hiLayer.addLayer(L.polyline(rivLL[r.into.river], Object.assign({ color: '#5a3a12', weight: 2, opacity: 0.55, dashArray: '5 7' }, o)));
+    for (const t of allTribs(i)) hiLayer.addLayer(L.polyline(rivLL[t], Object.assign({ color: '#2f86d6', weight: 2.6, opacity: 0.95 }, o)));
+    hiLayer.addLayer(L.polyline(rivLL[i], Object.assign({ color: '#ffd36b', weight: 12, opacity: 0.5 }, o)));
+    hiLayer.addLayer(L.polyline(rivLL[i], Object.assign({ color: '#b34d00', weight: 4, opacity: 1 }, o)));
+    for (const t of r.trib) { const m = net.rivers[t].mouth; hiLayer.addLayer(L.circleMarker(toLatLng(m[0], m[1]), Object.assign({ radius: 4, color: '#14466f', weight: 1.5, fillColor: '#8cc8ff', fillOpacity: 1 }, o))); }
+    const src = L.circleMarker(toLatLng(r.src[0], r.src[1]), Object.assign({ radius: 6, color: '#1f5b22', weight: 2, fillColor: '#8fe08f', fillOpacity: 1 }, o));
+    const mouth = L.circleMarker(toLatLng(r.mouth[0], r.mouth[1]), Object.assign({ radius: 7, color: '#6b1a00', weight: 2, fillColor: '#ff8a4a', fillOpacity: 1 }, o));
+    src.bindTooltip(r.from && r.from.lake != null ? 'Flows out of ' + esc(lakeName(r.from.lake)) : r.from && r.from.river != null ? 'Leaves ' + esc(riverName(r.from.river) || 'another river') : 'Source', { permanent: true, direction: 'top', className: 'rivtip end', offset: [0, -6] });
+    mouth.bindTooltip('Flows ' + esc(intoText(r)), { permanent: true, direction: 'top', className: 'rivtip end', offset: [0, -7] });
+    hiLayer.addLayer(src); hiLayer.addLayer(mouth);
+  }
+  function selectRiver(i, fly) {
+    riverSel = i; riverHi = -1; showHi();
+    const lb = riverNames().get(i);
+    if (lb) { selSet.clear(); selLabel = lb.id; } else selLabel = null;
+    selRoute = null;
+    ctx.openPanel('names', true); drawRoutes(); drawNames();
+    if (fly) map.flyToBounds(riverBounds(i).pad(0.25), { duration: 0.8, maxZoom: NATIVE - 0.5 });
+  }
+
+  // ── naming
+  const BASE_SYL = ['al', 'an', 'ber', 'dor', 'el', 'en', 'fal', 'gar', 'hal', 'is', 'kar', 'lin', 'mar', 'nor', 'or', 'ra', 'sel', 'tor', 'ul', 'van', 'wen', 'yr'];
+  function forgeRiverName(i, avoid) {
+    const r = net.rivers[i], f = r.pieces[Math.floor(r.pieces.length / 2)], k = Math.floor(f.length / 4) * 2;
+    const nation = ctx.nationNear ? ctx.nationNear(f[k], f[k + 1]) : '';
+    const N = ctx.names && ctx.names();
+    const taken = new Set([...labels().map(l => String(l.text || '').toLowerCase()), ...D().markers.map(m => String(m.name || '').toLowerCase()), ...(avoid || [])]);
+    // a dozen from the forge; the easiest to say wins (not too long, no knots of consonants or runs of vowels)
+    const say = w => {
+      const x = w.toLowerCase(); let sc = Math.abs(x.length - 6.5) * 0.45;
+      sc += (x.match(/[^aeiouy'\- ]{3,}/g) || []).filter(c => !/^(str|sch|tch|ght|nds|nth|rth|lds|rst|ndr|ntr)/.test(c)).length * 1.6;
+      sc += (x.match(/[aeiouy]{3,}/g) || []).length * 1.2 + (/['\-]/.test(x) ? 1.5 : 0) + (/(.)\1\1/.test(x) ? 2 : 0);
+      return sc;
+    };
+    const pool = [];
+    for (let t = 0; t < 24 && pool.length < 12; t++) {
+      let base = (N && N.suggest(nation)) || '';
+      base = base.replace(/\s+(river|lake|sea|bay|mere|water)$/i, '').trim();
+      if (!base || /\s/.test(base) || base.length < 3 || base.length > 11 || taken.has(base.toLowerCase())) continue;
+      pool.push(base);
+    }
+    while (pool.length < 3) { let b = ''; for (let k = 0; k < 2 + (Math.random() < 0.4); k++) b += BASE_SYL[Math.floor(Math.random() * BASE_SYL.length)]; pool.push(b[0].toUpperCase() + b.slice(1)); }
+    pool.sort((a, b) => say(a) - say(b));
+    for (const base of pool) {
+      const u = Math.random(), name = u < 0.42 ? `River ${base}` : u < 0.8 ? `${base} River` : `The ${base}`;
+      if (!taken.has(name.toLowerCase())) return name;
+    }
+    return 'New River';
+  }
+  // the river names already on the map set the size for new ones (the middle of theirs), else the kind's size
+  function riverSize() {
+    const s = labels().filter(l => l.kind === 'river' && isFinite(+l.size) && +l.size > 0).map(l => +l.size).sort((a, b) => a - b);
+    return s.length ? s[Math.floor(s.length / 2)] : null;
+  }
+  // a name along a river: the smoothest stretch of it long enough for the name, near its middle and clear of other
+  // names and of places, set just beside the water so the river still shows; null if the river's too short for it
+  function placeRiverName(i, text, size) {
+    const r = net.rivers[i], K = nameKind('river'), sz = size || num(K.size, 90), spacing = num(K.spacing, 0.12);
+    const want = sz * text.length * (0.5 + spacing) * 1.15;
+    const piece = r.pieces.map(ptsOf).sort((a, b) => pathLength(b) - pathLength(a))[0];
+    if (!piece || pathLength(piece) < want * 1.05) return null;
+    // the course, smoothed and evenly spaced
+    const sm = smooth(piece, 6), step = Math.max(4, sz * 0.35), P = [sm[0]];
+    let acc = 0;
+    for (let k = 1; k < sm.length; k++) {
+      let a = P[P.length - 1]; const b = sm[k]; let d = Math.hypot(b[0] - a[0], b[1] - a[1]); acc = d;
+      while (acc >= step) { const t = step / acc; a = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; P.push(a); acc = Math.hypot(b[0] - a[0], b[1] - a[1]); }
+    }
+    const n = Math.round(want / step); if (P.length < n + 2) return null;
+    const ang = []; for (let k = 0; k + 1 < P.length; k++) ang.push(Math.atan2(P[k + 1][1] - P[k][1], P[k + 1][0] - P[k][0]));
+    const others = labels().filter(l => riverOfLabel(l.id) !== i).map(l => l.pts[Math.floor(l.pts.length / 2)]);
+    const bx = [Math.min(...P.map(p => p[0])) - want, Math.max(...P.map(p => p[0])) + want, Math.min(...P.map(p => p[1])) - want, Math.max(...P.map(p => p[1])) + want];
+    const places = D().markers.filter(m => isFinite(m.x) && m.x > bx[0] && m.x < bx[1] && m.y > bx[2] && m.y < bx[3]);
+    let best = -1, bs = Infinity;
+    for (let s0 = 1; s0 + n < P.length - 1; s0++) {
+      let turn = 0; for (let k = s0; k < s0 + n - 1; k++) { let d = ang[k + 1] - ang[k]; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; turn += Math.abs(d); }
+      const a = P[s0], b = P[s0 + n], mid = P[s0 + (n >> 1)];
+      let dx = b[0] - a[0], dy = b[1] - a[1]; if (dx < 0) { dx = -dx; dy = -dy; }
+      const steep = Math.abs(Math.atan2(dy, dx)) * 180 / Math.PI;
+      let sc = turn + 1.4 * Math.abs((s0 + n / 2) / P.length - 0.5) + (steep > 55 ? (steep - 55) / 35 : 0);
+      for (const o of others) if (Math.hypot(o[0] - mid[0], o[1] - mid[1]) < want) sc += 3;
+      let hits = 0; for (let k = s0; k <= s0 + n; k += 2) for (const m of places) if (Math.hypot(m.x - P[k][0], m.y - P[k][1]) < sz * 1.6) hits++;
+      sc += Math.min(3, hits * 0.35);
+      if (sc < bs) { bs = sc; best = s0; }
+    }
+    if (best < 0) return null;
+    // five points along it, a little to one side: above the water as it reads left to right
+    const W = P.slice(best, best + n + 1);
+    if (W[W.length - 1][0] < W[0][0]) W.reverse();
+    const ch = [W[W.length - 1][0] - W[0][0], W[W.length - 1][1] - W[0][1]], up = [ch[1], -ch[0]];
+    const off = sz * 0.7 + 8, out = [];   // (the river's own width is about 20 map px)
+    for (let q = 0; q < 5; q++) {
+      const k = Math.round(q / 4 * (W.length - 1)), p = W[k], a = W[Math.max(0, k - 1)], b = W[Math.min(W.length - 1, k + 1)];
+      let nx = -(b[1] - a[1]), ny = b[0] - a[0]; const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+      if (nx * up[0] + ny * up[1] < 0) { nx = -nx; ny = -ny; }
+      out.push([Math.round(p[0] + nx * off), Math.round(p[1] + ny * off)]);
+    }
+    return out;
+  }
+  function nameRiver(i, text) {   // a name for one river (or a new one for it), set along it
+    const r = net.rivers[i], lb = riverNames().get(i), size = (lb && +lb.size) || riverSize();
+    text = text || forgeRiverName(i);
+    if (lb) { setL(lb, t => { t.text = text; }); return true; }
+    const pts = placeRiverName(i, text, size);
+    if (!pts) { toast(`${text}: this river is too short for its name to lie along it. Add it by hand (Add a name).`, true); return false; }
+    const nl = { id: uid('w'), text, kind: 'river', pts, river: r.key }; if (size) nl.size = size;
+    ctx.change(() => { labels().push(nl); }, { panel: false });
+    selLabel = nl.id; ctx.renderPanel(); drawNames(); drawRivers();
+    return true;
+  }
+  function renameAlong(i) {   // its name set along it again
+    const lb = riverNames().get(i); if (!lb) return;
+    const pts = placeRiverName(i, lb.text, +lb.size || riverSize());
+    if (!pts) return toast('There isn’t a long enough stretch of this river for its name.', true);
+    setL(lb, t => { t.pts = pts; t.river = net.rivers[i].key; });
+    drawNames();
+  }
+  function nameAll() {
+    if (!net) return;
+    const names = riverNames(), size = riverSize(), min = rivMin(), made = [], avoid = new Set();
+    let short = 0;
+    // the longest first, so the main rivers have first pick of the clear stretches
+    for (const r of net.rivers.slice().sort((a, b) => b.len - a.len)) {
+      if (r.len < min || names.has(r.i)) continue;
+      const text = forgeRiverName(r.i, avoid); avoid.add(text.toLowerCase());
+      const pts = placeRiverName(r.i, text, size);
+      if (!pts) { short++; continue; }
+      const nl = { id: uid('w'), text, kind: 'river', pts, river: r.key }; if (size) nl.size = size;
+      labels().push(nl); made.push(nl);   // (pushed now so the next ones keep clear of it; taken back out for the undoable change)
+    }
+    D().labels = labels().filter(l => !made.includes(l));
+    if (!made.length) return toast(short ? 'The rivers left without names are too short for one to lie along them.' : 'Every river long enough already has a name.');
+    ctx.change(() => { labels().push(...made); });
+    drawNames(); drawRivers();
+    toast(`Named ${made.length} river${made.length === 1 ? '' : 's'}${short ? ` (${short} too short for a name along them)` : ''}. Undo (Ctrl+Z) takes them all back.`);
+  }
+
+  // ── the Rivers part of the Names panel
+  function riverPanel() {
+    if (!net) return [h('h2', null, 'Rivers'), h('p', { class: 'small muted' }, Land.ready ? 'No rivers found in the map’s water (Map settings › Rivers and lakes).' : 'Finding the rivers…')];
+    const names = riverNames(), min = rivMin(), mpp = +D().settings.milesPerPx || 0;
+    const long = net.rivers.filter(r => r.len >= min || names.has(r.i)).sort((a, b) => b.len - a.len);
+    const unnamed = long.filter(r => !names.has(r.i)).length;
+    const out = [h('h2', null, `Rivers · ${net.rivers.length}`)];
+    if (riverSel >= 0 && net.rivers[riverSel]) {
+      const i = riverSel, r = net.rivers[i], lb = names.get(i);
+      const chip = (k, label) => h('button', { class: 'rchip', onmouseenter: () => { riverHi = k; showHi(); }, onmouseleave: () => { riverHi = -1; showHi(); }, onclick: () => selectRiver(k, true) }, label);
+      out.push(h('div', { class: 'rivsel' },
+        h('label', null, 'This river'),
+        h('div', { class: 'row', style: 'align-items:end' },
+          h('input', { type: 'text', value: lb ? lb.text : '', placeholder: 'An unnamed river: type a name', onchange: e => { const v = e.target.value.trim(); if (!v) return; nameRiver(i, v); } }),
+          h('button', { class: 'btn sm', title: 'A name in the style of the land it runs through', onclick: () => nameRiver(i) }, '✦ Forge one')),
+        h('p', { class: 'small' }, `${lenText(r)}, flowing ${intoText(r)}.`,
+          r.into.river != null ? [' ', chip(r.into.river, 'Show ' + (riverName(r.into.river) || 'that river'))] : null,
+          r.from && r.from.river != null ? [' Leaves ', chip(r.from.river, riverName(r.from.river) || 'another river'), '.'] : r.from && r.from.lake != null ? ` Flows out of ${lakeName(r.from.lake)}.` : ''),
+        r.trib.length ? h('div', { class: 'rtribs' }, h('span', { class: 'small muted' }, 'Tributaries: '), ...r.trib.slice().sort((a, b) => net.rivers[b].len - net.rivers[a].len).map(t => chip(t, riverName(t) || `unnamed (${lenText(net.rivers[t])})`))) : null,
+        h('div', { class: 'btnrow' },
+          h('button', { class: 'btn sm', onclick: () => map.flyToBounds(riverBounds(i).pad(0.25), { duration: 0.8, maxZoom: NATIVE - 0.5 }) }, 'Show all of it'),
+          lb ? h('button', { class: 'btn sm', title: 'Set its name along the smoothest stretch again', onclick: () => renameAlong(i) }, 'Set its name along it again') : null,
+          h('button', { class: 'btn sm', onclick: () => { riverSel = -1; showHi(); ctx.renderPanel(); } }, 'Done'))));
+    }
+    out.push(
+      h('label', { class: 'inline' }, h('input', { type: 'checkbox', checked: riverOn || null, onchange: e => { riverOn = e.target.checked; try { localStorage.setItem('valanar-rivers-on', riverOn ? '1' : '0'); } catch (x) { /* private */ } drawRivers(); } }),
+        'Show the rivers on the map (point at one to see all of it)'),
+      h('div', { class: 'row', style: 'align-items:end;margin-top:6px' },
+        h('div', null, h('label', null, mpp ? `Name rivers longer than (${unit()[1]})` : 'Name rivers longer than (map px)'),
+          h('input', { type: 'number', min: 0, step: mpp ? 5 : 50, value: mpp ? Math.round(min * mpp * unit()[0]) : min, style: 'width:90px',
+            onchange: e => { const v = Math.max(0, +e.target.value || 0), px = mpp ? Math.round(v / unit()[0] / mpp) : v; ctx.change(() => { D().settings.riverMin = px; }, { panel: true }); drawRivers(); } })),
+        h('button', { class: 'btn primary', disabled: !unnamed || null, onclick: nameAll }, unnamed ? `Name the rivers (${unnamed})` : 'All named')),
+      h('p', { class: 'small muted' }, 'Names come from the Name Forge, in the style of the land each river runs through, and lie along the smoothest clear stretch. Each is a river name like the others above: rename it, drag its points, or delete it. Ctrl+Z undoes a whole batch.'),
+      h('div', { class: 'nlist rlist' }, ...long.map(r => h('div', { class: 'nrow' + (r.i === riverSel ? ' on' : ''), style: 'cursor:pointer',
+        onmouseenter: () => { riverHi = r.i; showHi(); }, onmouseleave: () => { riverHi = -1; showHi(); }, onclick: () => selectRiver(r.i, true) },
+        h('span', { class: 'rsw', style: `background:${rivColor(r.i)}` }),
+        h('span', { class: 'rnm', style: 'flex:1;font-style:italic' + (names.has(r.i) ? '' : ';opacity:.6') }, riverName(r.i) || 'Unnamed'),
+        h('span', { class: 'cnt' }, lenText(r))))));
+    return out;
+  }
 
   // ───────────────────────── panels ─────────────────────────
   const setR = (r, fn, opts) => ctx.change(() => { const t = routes().find(x => x.id === r.id); if (t) fn(t); }, opts || { panel: false });
@@ -645,6 +981,7 @@ window.ValanarMapTools = function (ctx) {
       labels().length ? h('div', { class: 'nlist' }, ...labels().slice().sort((a, b) => num(lval(b, 'size'), 0) - num(lval(a, 'size'), 0)).map(x => h('div', { class: 'nrow' + (picked(x.id) ? ' on' : ''), style: 'cursor:pointer', 'data-lid': x.id,
         onclick: e => { if (e.ctrlKey || e.metaKey) { pickName(x.id, true); selRoute = null; ctx.renderPanel(); drawRoutes(); return; } pickName(x.id, false); selRoute = null; ctx.renderPanel(); drawRoutes(); const c = x.pts[Math.floor(x.pts.length / 2)]; map.setView(toLatLng(c[0], c[1]), clamp(Math.max(lkind(x).zoom[0], map.getZoom()), map.getMinZoom(), lkind(x).zoom[1])); } },
         h('span', { class: 'rnm', style: 'flex:1;font-style:italic' }, x.text), h('span', { class: 'cnt' }, lkind(x).label)))) : h('p', { class: 'small muted' }, 'No names yet.'));
+    body.push(...riverPanel());
     return ctx.panelShell('Names on the map', h('div', { class: 'form' }, ...body));
   }
 
@@ -724,10 +1061,11 @@ window.ValanarMapTools = function (ctx) {
     if (selSet.size === 1) selSet.clear();
     seaGrid = Land.ready ? seaGrid : null;
     drawRoutes();
+    if (net && (!!rivLayer.getLayers().length) !== (riverOn && ctx.editMode())) drawRivers(); else showHi();
   }
-  function panelClosed() { selRoute = selLabel = null; selSet.clear(); kindPreview = null; if (mode) setMode(null); drawRoutes(); }
+  function panelClosed() { selRoute = selLabel = null; selSet.clear(); kindPreview = null; riverSel = riverHi = -1; showHi(); if (mode) setMode(null); drawRoutes(); }
 
   applyLook();
   drawRoutes();
-  return { seaPath: (a, b) => plotSea(a, b, true), selectName: id => { selSet.clear(); selLabel = id; selRoute = null; ctx.openPanel('names', true); drawRoutes(); drawNames(); }, sync, applyLook, panel, busy, look, clickAt: (ll, place) => mapClick(ll, place), distText, unit, panelClosed, landChanged: () => { seaGrid = null; } };
+  return { seaPath: (a, b) => plotSea(a, b, true), selectName: id => { selSet.clear(); selLabel = id; selRoute = null; ctx.openPanel('names', true); drawRoutes(); drawNames(); }, sync, applyLook, panel, busy, look, clickAt: (ll, place) => mapClick(ll, place), distText, unit, panelClosed, landChanged: () => { seaGrid = null; }, setRivers, rivers: () => net };
 };
