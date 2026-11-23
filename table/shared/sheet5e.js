@@ -579,6 +579,48 @@
     return s;
   }
 
-  const api = { toModel, fromModel, sync, addItem, addSpell, SKILLS, CLASSES };
+  // A feature card (a class feature, racial trait or feat) onto the sheet: Legacy's Features & Traits list, or the
+  // matching block of text on the Community sheet. Nothing happens if one of that name is there already.
+  // f: { name, text, kind: 'class' | 'race' | 'feat', cls }
+  const plainText = t => String(t || '').replace(/\*\*\*|\*\*|__/g, '').replace(/(^|\s)\*([^*\n]+)\*/g, '$1$2').replace(/^#{1,6}\s*/gm, '').trim();
+  function addFeature(sheet, attrs, f) {
+    attrs = attrs || {};
+    const s = {}, src = f.kind === 'race' ? 'race' : f.kind === 'class' ? 'class' : 'feat', name = String(f.name || '').trim(), desc = plainText(f.text);
+    if (!name) return s;
+    if (sheet === 'dnd5e_legacy') {
+      if (rows(attrs, 'traits').some(r => norm(r.name) === norm(name))) return s;
+      addRows(s, attrs, 'traits', [{ 'options-flag': '0', name, description: desc, source: src === 'race' ? 'Racial' : src === 'class' ? 'Class' : 'Feat',
+        source_type: src === 'class' ? (f.cls || '') : '' }]);
+    } else {
+      const key = FEAT_TEXT[src], cur = String(attrs[key] || '');
+      if (parseFeatures(cur, src).some(x => norm(x.name) === norm(name))) return s;
+      s[key] = (cur.trim() ? cur.trim() + '\n\n' : '') + `${name}: ${desc}`;
+    }
+    return s;
+  }
+
+  // A background onto the sheet: its name, its skill and tool proficiencies, and its feat (as a feature).
+  // bg: { name, skills: ['insight', …], tool, feat: { name, text } }
+  function addBackground(sheet, attrs, bg) {
+    attrs = attrs || {};
+    const s = {}, legacy = sheet === 'dnd5e_legacy', name = String(bg.name || '').trim();
+    if (!name) return s;
+    if (norm(attrs.background) !== norm(name)) s.background = name;
+    for (const key of bg.skills || []) {
+      const sk = SKILLS[key]; if (!sk) continue;
+      const [cn, ln] = sk;
+      if (legacy) { if (!on(attrs[ln + '_prof'])) { s[ln + '_prof'] = `(@{pb}*@{${ln}_type})`; if (!attrs[ln + '_type']) s[ln + '_type'] = '1'; } }
+      else if (!attrs[cn + '_prof_exp'] || attrs[cn + '_prof_exp'] === '0') s[cn + '_prof_exp'] = '@{PB}';
+    }
+    const tool = String(bg.tool || '').replace(/\*/g, '').trim();
+    if (tool) {
+      const key = legacy ? 'other_proficiencies_and_languages' : 'pro_tools', cur = String(attrs[key] || '');
+      if (!cur.toLowerCase().includes(tool.toLowerCase())) s[key] = legacy ? (cur.trim() ? cur.trim() + '\n' : '') + 'Tools: ' + tool : (cur.trim() ? cur.trim() + ', ' : '') + tool;
+    }
+    if (bg.feat && bg.feat.name) Object.assign(s, addFeature(sheet, Object.assign({}, attrs, s), { name: bg.feat.name, text: bg.feat.text, kind: 'feat' }));
+    return s;
+  }
+
+  const api = { toModel, fromModel, sync, addItem, addSpell, addFeature, addBackground, plainText, SKILLS, CLASSES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Sheet5e = api;
 })(this);

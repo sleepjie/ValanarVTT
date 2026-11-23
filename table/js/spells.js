@@ -98,7 +98,7 @@ V.showSpellCard = function (sp) {
       try { await api('/api/compendium/spells?id=' + encodeURIComponent(sp.id), { method: 'DELETE' }); closeView(); await V.loadSpells(true); } catch (e) { V.toast(e.message, true); }
     } }, 'Remove'));
   }
-  const credit = String(sp.id || '').startsWith('srd:') ? 'SRD 5.1 · CC-BY-4.0 · Wizards of the Coast' : sp.source && sp.source !== 'Homebrew' ? `Brought in by the GM · ${sp.source}` : 'Homebrew';
+  const credit = V.sourceName ? V.sourceName(sp) : String(sp.id || '').startsWith('srd:') ? 'SRD 5.1 · CC-BY-4.0 · Wizards of the Coast' : sp.source || 'Homebrew';
   view = h('div', { class: 'cardview', onclick: e => { if (e.target === view) closeView(); } },
     h('div', { class: 'cvwrap' }, card, h('div', { class: 'cvacts' }, ...acts), h('div', { class: 'cvcredit' }, credit)),
     h('button', { class: 'cvx', title: 'Close (Esc)', onclick: closeView }, '×'));
@@ -163,7 +163,7 @@ function renderSpells() {
   const sources = [...new Set(extra.map(s => s.source || 'Homebrew'))];
   draw();
   box.replaceChildren(side,
-    h('div', { class: 'ihead' }, search, gm ? h('button', { class: 'btn sm', title: 'Bring in spells from other books (5etools files) or make your own', onclick: importDialog }, 'Import') : null,
+    h('div', { class: 'ihead' }, search, gm ? h('button', { class: 'btn sm', title: 'Bring in spells, items and features from other books (5etools files)', onclick: importDialog }, 'Import') : null,
       gm ? h('button', { class: 'btn sm primary', onclick: () => editSpell({}) }, 'New') : null),
     h('div', { class: 'row', style: 'margin:6px 0' }, cls, h('span', { class: 'muted small' }, sources.length ? 'SRD + ' + sources.join(', ') : 'SRD 5.1')),
     list,
@@ -175,39 +175,66 @@ V.renderSpellsTab = renderSpells;
 
 // ───────── bringing spells in (GM) ─────────
 const api = (url, opts) => fetch(url, Object.assign({ credentials: 'same-origin' }, opts)).then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; });
-function importDialog() {
+// one dialog for every kind: a 5etools file can hold spells, items, a class with its subclasses, races, feats…
+function importDialog() { V.compendiumImport('spells'); }
+V.compendiumImport = function (focus) {
   const modal = $('#modal'), close = () => { modal.hidden = true; modal.replaceChildren(); };
-  const status = h('div', { class: 'muted small', style: 'min-height:1.4em' });
-  const counts = () => { const m = new Map(); for (const s of extra) m.set(s.source || 'Homebrew', (m.get(s.source || 'Homebrew') || 0) + 1); return [...m]; };
+  const status = h('div', { class: 'muted small', style: 'min-height:1.4em;white-space:pre-line' });
+  const KINDS = [['spells', 'spell', () => extra, '/api/compendium/spells'], ['items', 'item', () => (V.importedItems ? V.importedItems() : []), '/api/compendium/items'],
+    ['features', 'feature', () => (V.importedFeatures ? V.importedFeatures() : []), '/api/compendium/features'],
+    ['monsters', 'monster', () => (V.importedMonsters ? V.importedMonsters() : []), '/api/compendium/monsters']];
+  const reload = () => Promise.all([V.loadSpells(true), V.loadItems ? V.loadItems(true) : null, V.loadFeatures ? V.loadFeatures(true) : null, V.loadMonsters ? V.loadMonsters(true) : null].map(p => p && p.catch(() => null)));
   const have = h('div', { class: 'spsrc' });
-  const drawHave = () => have.replaceChildren(...(counts().length ? counts().map(([src, n]) => h('div', { class: 'row' }, h('b', null, src), h('span', { class: 'muted' }, `${n} spell${n === 1 ? '' : 's'}`), h('div', { class: 'grow' }),
-    h('button', { class: 'btn sm danger', onclick: async () => { if (!confirm(`Remove all ${n} spells from ${src}?`)) return; await api('/api/compendium/spells?source=' + encodeURIComponent(src), { method: 'DELETE' }); await V.loadSpells(true); drawHave(); } }, 'Remove')))
-    : [h('p', { class: 'muted small' }, 'Nothing brought in yet: the tab has the 319 SRD spells.')]));
-  drawHave();
+  const drawHave = () => {
+    const rows = [];
+    for (const [k, word, list, url] of KINDS) {
+      const m = new Map(); for (const x of list()) m.set(x.source || 'Homebrew', (m.get(x.source || 'Homebrew') || 0) + 1);
+      for (const [src, n] of [...m].sort()) rows.push(h('div', { class: 'row' }, h('b', null, src), h('span', { class: 'muted' }, `${n} ${word}${n === 1 ? '' : 's'}`), h('div', { class: 'grow' }),
+        h('button', { class: 'btn sm danger', onclick: async () => {
+          if (!confirm(`Remove all ${n} ${word}s from ${src}?`)) return;
+          try { await api(url + '?source=' + encodeURIComponent(src), { method: 'DELETE' }); } catch (e) { V.toast(e.message, true); }
+          await reload(); drawHave();
+        } }, 'Remove')));
+    }
+    have.replaceChildren(...(rows.length ? rows : [h('p', { class: 'muted small' }, 'Nothing brought in yet: the table has the SRD 5.1’s spells, items and features.')]));
+  };
+  drawHave(); reload().then(drawHave);   // the Items and Features lists load when their tabs first open
+  const said = r => [r.spells && `${r.spells.added} new spells, ${r.spells.replaced} updated`, r.spellClasses && 'class lists for spells',
+    r.items && `${r.items.added} new items, ${r.items.replaced} updated`, r.features && `${r.features.added} new features, ${r.features.replaced} updated`, r.monsters && `${r.monsters.added} new monsters, ${r.monsters.replaced} updated`].filter(Boolean).join(' · ');
   const send = async (body, label) => {
     status.textContent = `Bringing in ${label}…`;
-    try {
-      const r = await api('/api/compendium/spells/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-      status.textContent = r.classes ? 'Class lists brought in: spells now know which classes have them.' : `${label}: ${r.added} new, ${r.replaced} updated (${(r.sources || []).join(', ')}).`;
-      await V.loadSpells(true); drawHave();
-    } catch (e) { status.textContent = `${label}: ${e.message}`; }
+    try { const r = await api('/api/compendium/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }); return `${label}: ${said(r)}`; }
+    catch (e) { return `${label}: ${e.message}`; }
   };
-  const file = h('input', { type: 'file', accept: '.json,application/json', multiple: true, onchange: async () => { for (const f of file.files) await send(await f.text(), f.name); file.value = ''; } });
-  const link = h('input', { type: 'url', placeholder: 'https://…/spells-xge.json', style: 'flex:1' });
+  const many = async (jobs) => {
+    const out = [];
+    for (const [body, label] of jobs) { out.push(await send(await body(), label)); status.textContent = out.join('\n') + (out.length < jobs.length ? '\n…' : ''); }
+    await reload(); drawHave();
+  };
+  const file = h('input', { type: 'file', accept: '.json,application/json', multiple: true, onchange: async () => { const fs = [...file.files]; file.value = ''; await many(fs.map(f => [() => f.text(), f.name])); } });
+  const link = h('input', { type: 'url', placeholder: 'https://…/items.json', style: 'flex:1' });
+  const own = h('p', { class: 'muted small' }, 'A file of this table’s own item cards (exported from another campaign)? ', h('a', { href: '#', onclick: e => { e.preventDefault(); close(); V.importCards && V.importCards(); } }, 'Add them to this campaign’s homebrew'), '.');
   modal.replaceChildren(h('div', { class: 'dialog' },
-    h('div', { class: 'dh' }, h('h2', null, 'Bring in spells'), h('button', { onclick: close }, '×')),
+    h('div', { class: 'dh' }, h('h2', null, 'Bring in books'), h('button', { onclick: close }, '×')),
     h('div', { class: 'db' },
-      h('p', null, 'The table comes with the 319 spells of the SRD 5.1, which are free to share. Spells from other books (the rest of the Player’s Handbook, Xanathar’s Guide…) aren’t, so bring in your own copies: they’re kept on this server, for your campaigns only.'),
-      h('p', { class: 'muted small' }, 'It reads 5etools spell files (spells-phb.json, spells-xge.json…; add gendata-spell-source-lookup.json too so spells know their classes), the 5e-database JSON, and spell lists exported from another table like this one. A spell brought in replaces the SRD spell of the same name.'),
+      h('p', null, 'The table comes with the SRD 5.1’s spells, items and features, which are free to share. The rest of the Player’s Handbook, the Dungeon Master’s Guide, Xanathar’s, Tasha’s and the other books aren’t, so bring in your own copies: they’re kept on this server, for your campaigns only, and never go in the table’s code.'),
+      h('p', { class: 'muted small' }, 'It reads 5etools data files, several at once:'),
+      h('ul', { class: 'muted small', style: 'margin:0 0 8px 18px;padding:0' },
+        h('li', null, h('b', null, 'Spells'), ': spells-phb.json, spells-xge.json, spells-tce.json…, and gendata-spell-source-lookup.json so they know their classes'),
+        h('li', null, h('b', null, 'Items'), ': items.json (every book’s magic items), items-base.json (weapons, armour, gear) and magicvariants.json (+1 weapons and the like)'),
+        h('li', null, h('b', null, 'Class and subclass features'), ': class-fighter.json, class-wizard.json… (the class folder), class-artificer.json for the artificer'),
+        h('li', null, h('b', null, 'Races, feats, options'), ': races.json, feats.json and optionalfeatures.json (invocations, fighting styles, maneuvers, metamagic, infusions)')),
+      h('p', { class: 'muted small' }, 'Something brought in replaces the SRD card of the same name. Bringing a file in again updates what came from it. Optional class features (Tasha’s) are listed, but not given to characters on their own.'),
       h('label', null, 'From files on this computer'), file,
       h('label', { style: 'margin-top:10px' }, 'Or from a link'),
-      h('div', { class: 'row' }, link, h('button', { class: 'btn primary', onclick: () => link.value.trim() && send(JSON.stringify({ url: link.value.trim() }), link.value.trim().split('/').pop()) }, 'Bring in')),
+      h('div', { class: 'row' }, link, h('button', { class: 'btn primary', onclick: () => link.value.trim() && many([[async () => JSON.stringify({ url: link.value.trim() }), link.value.trim().split('/').pop()]]) }, 'Bring in')),
       status,
       h('h3', { style: 'margin:14px 0 6px' }, 'Brought in'), have,
-      h('p', { class: 'muted small' }, h('a', { href: '#', onclick: e => { e.preventDefault(); exportSpells(); } }, 'Download the spells you’ve brought in'), ' (to move them to another table).')),
+      focus === 'items' ? own : null,
+      focus === 'spells' ? h('p', { class: 'muted small' }, h('a', { href: '#', onclick: e => { e.preventDefault(); exportSpells(); } }, 'Download the spells you’ve brought in'), ' (to move them to another table).') : null),
     h('div', { class: 'df' }, h('div', { class: 'grow' }), h('button', { class: 'btn', onclick: close }, 'Done'))));
   modal.hidden = false;
-}
+};
 function exportSpells() {
   const blob = new Blob([JSON.stringify({ spells: extra }, null, 1)], { type: 'application/json' });
   const a = h('a', { href: URL.createObjectURL(blob), download: 'spells.json' }); document.body.append(a); a.click(); a.remove();

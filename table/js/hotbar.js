@@ -178,8 +178,12 @@ on('meta', () => { if (cur) update(); });
 on('scene', () => update());
 
 const levelOf = a => (V.classesOf ? V.classesOf(a) : []).reduce((s, c) => s + c.level, 0) || +a.level || 1;
+// each kind of button has its own colours: the icon's gradient (from the item art's palettes) and the button's tint
+const HB_KIND = { atk: ['metal', '#c0503a'], spells: ['s-abjuration', '#4f8fd6'], features: ['r-legendary', '#e0a43a'], actions: ['r-uncommon', '#3f9a50'], bag: ['warm', '#b0844a'] };
 function btn(cls, icon, label, title, onclick, extra) {
-  return h('button', Object.assign({ class: 'hb ' + cls, title, onclick }, extra || {}), icon ? V.uiIcon(icon, 'hbi') : null, label ? h('span', { class: 'hbl' }, label) : null);
+  const kind = Object.keys(HB_KIND).find(k => cls.split(' ').includes(k)), [pal, tint] = HB_KIND[kind] || HB_KIND.bag;
+  const ic = icon ? (V.gameIcon && V.hasGameIcon(icon) ? V.gameIcon(icon, pal, 'hbi gi') : V.uiIcon(icon, 'hbi')) : null;
+  return h('button', Object.assign({ class: 'hb ' + cls, title, onclick, style: `--tc:${tint}` }, extra || {}), ic, label ? h('span', { class: 'hbl' }, label) : null);
 }
 function draw() {
   mount();
@@ -189,9 +193,10 @@ function draw() {
   bar.hidden = false; document.body.classList.add('hbon');
   const tok = state.scene && state.scene.tokens.get(cur.token), hp = tok && tok.hp && tok.hp.max ? tok.hp : null;
   const who = h('div', { class: 'hbwho', title: 'Open the sheet', onclick: () => V.openSheet(ch.id) },
-    h('span', { class: 'av', style: ch.avatar ? `background-image:url("${ch.avatar}")` : '' }, ch.avatar ? '' : V.initials(ch.name),
+    h('span', { class: 'av' + ((tok && tok.img) || ch.token ? ' tokface' : ''), style: (tok && tok.img) || V.faceOf(ch) ? `background-image:url("${(tok && tok.img) || V.faceOf(ch)}")` : '' }, (tok && tok.img) || V.faceOf(ch) ? '' : V.initials(ch.name),
       hp ? h('span', { class: 'hbhp', title: `${hp.v} / ${hp.max} hit points` }, h('i', { style: `width:${Math.max(0, Math.min(100, hp.v / hp.max * 100))}%` }), h('em', null, `${hp.v}/${hp.max}`)) : null),
-    h('span', { class: 'hbn' }, h('b', null, ch.name), a ? h('span', null, (V.classesOf(a).map(c => `${c.cls} ${c.level}`).join(' / ')) || '') : null));
+    // the name and class sit just above the bar, so the bar itself is all buttons
+    h('span', { class: 'hbtag' }, h('b', null, ch.name), a && V.classesOf(a).length ? h('span', null, V.classesOf(a).map(c => `${c.cls} ${c.level}`).join(' / ')) : null));
   if (!a) { bar.replaceChildren(who, h('span', { class: 'hbwait' }, 'Opening the sheet…')); return; }
   const is5e = /^dnd5e/.test(ch.sheet || '');
   const parts = [who];
@@ -202,9 +207,9 @@ function draw() {
         { oncontextmenu: e => { e.preventDefault(); V.openSheet(ch.id); } }))));
     const sps = spellsOf(ch, a), feats = featuresOf(ch, a);
     const grp = [];
-    if (sps.length) grp.push(btn('tray' + (tray && tray.kind === 'spells' ? ' on' : ''), 'spell-book', `Spells`, 'Cantrips and prepared spells', () => openTray('spells'), { 'data-n': sps.length }));
-    if (feats.length) grp.push(btn('tray' + (tray && tray.kind === 'features' ? ' on' : ''), 'star-swirl', 'Features', 'Class features and traits', () => openTray('features'), { 'data-n': feats.length }));
-    grp.push(btn('tray' + (tray && tray.kind === 'actions' ? ' on' : ''), 'running-ninja', 'Actions', 'Dash, Disengage, Dodge, Help, Hide…', () => openTray('actions')));
+    if (sps.length) grp.push(btn('tray spells' + (tray && tray.kind === 'spells' ? ' on' : ''), 'spell-book', `Spells`, 'Cantrips and prepared spells', () => openTray('spells'), { 'data-n': sps.length }));
+    if (feats.length) grp.push(btn('tray features' + (tray && tray.kind === 'features' ? ' on' : ''), 'star-swirl', 'Features', 'Class features and traits', () => openTray('features'), { 'data-n': feats.length }));
+    grp.push(btn('tray actions' + (tray && tray.kind === 'actions' ? ' on' : ''), 'running-ninja', 'Actions', 'Dash, Disengage, Dodge, Help, Hide…', () => openTray('actions')));
     parts.push(h('div', { class: 'hbgrp' }, ...grp));
   }
   const items = ch.items || [], n = items.reduce((s, e) => s + (e.qty || 1), 0);

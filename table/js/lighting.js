@@ -60,6 +60,13 @@ function anim(l, t) {
 // --- canvases behind the three sprites ---
 function cv() { const c = document.createElement('canvas'); c.width = c.height = 2; return { c, ctx: c.getContext('2d'), tex: null }; }
 const VIS = cv(), COL = cv(), GREY = cv(), EXP = cv();
+// scratch canvases (never shown): the lit areas, the lit areas of the lights that don't move (kept until something
+// changes them), the holes to cut in the darkness, and the colour of the lights that neither move nor flicker
+const LIT = cv(), STAT = cv(), HOLES = cv(), COLSTAT = cv();
+function scratch(o, cw, ch) { if (o.c.width !== cw || o.c.height !== ch) { o.c.width = cw; o.c.height = ch; o.key = null; } }
+let losVer = 0;   // goes up whenever walls change, so cached light shapes are made again
+function clearLos() { losCache.clear(); losVer++; }
+const lightKey = (ls, extra) => losVer + '|' + (losCache.propSig || '') + '|' + extra + '|' + ls.map(l => [l.id, l.x, l.y, l.r, l.rb, l.angle, l.dir, l.color, l.intensity].join(',')).join(';');
 function fit(o, w, h, k, sprite) {
   const cw = Math.max(2, Math.ceil(w * k)), ch = Math.max(2, Math.ceil(h * k));
   if (o.c.width !== cw || o.c.height !== ch || !o.tex) {
@@ -109,14 +116,44 @@ function drawColour(t) {
   if (!lastCol) { L.lightCol.visible = false; return; }
   const { litLights, colStrength, w, h } = lastCol;
   fit(COL, w, h, Math.min(0.35, 768 / Math.max(w, h)), L.lightCol);
-  const c = COL.ctx; c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, COL.c.width, COL.c.height);
-  c.setTransform(COL.k, 0, 0, COL.k, 0, 0); c.globalCompositeOperation = 'lighter';
-  for (const l of litLights) {
+  const steady = l => !l.token && (!l.anim || l.anim === 'none');
+  const paintOne = (ctx, l, tt) => {
     let [r, g, b] = rgb(l.color);
-    if (l.anim === 'fairy') { const k = (Math.sin(t * 1.3 + seed(l.id)) + 1) / 2; [r, g, b] = [r * (1 - k) + 140 * k, g * (1 - k) + 200 * k, b * (1 - k) + 255 * k]; }
-    lightShape(c, l, t, a => `rgba(${r | 0},${g | 0},${b | 0},${a * (l.intensity ?? 0.5) * colStrength})`);
+    if (l.anim === 'fairy') { const k = (Math.sin(tt * 1.3 + seed(l.id)) + 1) / 2; [r, g, b] = [r * (1 - k) + 140 * k, g * (1 - k) + 200 * k, b * (1 - k) + 255 * k]; }
+    lightShape(ctx, l, tt, a => `rgba(${r | 0},${g | 0},${b | 0},${a * (l.intensity ?? 0.5) * colStrength})`);
+  };
+  // the lights that neither move nor flicker: drawn once, then copied
+  const still = litLights.filter(steady), key = lightKey(still, colStrength + '|' + COL.c.width);
+  scratch(COLSTAT, COL.c.width, COL.c.height);
+  if (COLSTAT.key !== key) {
+    const s2 = COLSTAT.ctx; s2.setTransform(1, 0, 0, 1, 0, 0); s2.clearRect(0, 0, COLSTAT.c.width, COLSTAT.c.height);
+    s2.setTransform(COL.k, 0, 0, COL.k, 0, 0); s2.globalCompositeOperation = 'lighter';
+    for (const l of still) paintOne(s2, l, t);
+    COLSTAT.key = key;
   }
+  const c = COL.ctx; c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, COL.c.width, COL.c.height);
+  if (still.length) c.drawImage(COLSTAT.c, 0, 0);
+  c.setTransform(COL.k, 0, 0, COL.k, 0, 0); c.globalCompositeOperation = 'lighter';
+  for (const l of litLights) if (!steady(l)) paintOne(c, l, t);
   COL.tex.baseTexture.update(); L.lightCol.visible = true;
+}
+
+// the lit areas, as black of the light's strength on LIT (at the darkness canvas's scale): the lights that stay put
+// are drawn once into STAT and copied; only the ones tokens carry are drawn each time
+function drawLit(ls, soft) {
+  scratch(LIT, VIS.c.width, VIS.c.height); scratch(STAT, VIS.c.width, VIS.c.height);
+  const still = ls.filter(l => !l.token), key = lightKey(still, VIS.k + soft);
+  if (STAT.key !== key) {
+    const s2 = STAT.ctx; s2.setTransform(1, 0, 0, 1, 0, 0); s2.globalCompositeOperation = 'source-over'; s2.clearRect(0, 0, STAT.c.width, STAT.c.height);
+    s2.setTransform(VIS.k, 0, 0, VIS.k, 0, 0); s2.filter = soft;   // each light softened inside its own walls, as before
+    for (const l of still) lightShape(s2, l, null, a => `rgba(0,0,0,${a})`);
+    s2.filter = 'none'; STAT.key = key;
+  }
+  const c = LIT.ctx; c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, LIT.c.width, LIT.c.height);
+  if (still.length) c.drawImage(STAT.c, 0, 0);
+  c.setTransform(VIS.k, 0, 0, VIS.k, 0, 0); c.filter = soft;
+  for (const l of ls) if (l.token) lightShape(c, l, null, a => `rgba(0,0,0,${a})`);
+  c.filter = 'none';
 }
 
 let expKey = null, expSaveT = 0;
@@ -132,12 +169,12 @@ function render(now) {
   const sc = sceneObj();
   const v = Vision.view(sc, viewers || [], ls, losCache);   // viewers' sight and each light's reach
   const owns = V.lightingOwnsDark();
-  animOn = ls.some(l => l.anim && l.anim !== 'none');
 
   // coloured light
   const colStrength = v.day ? 0.2 + d * 0.5 : 0.35 + d * 0.35;
   const litLights = v.day ? Vision.view(Object.assign({}, sc, { darkness: 1 }), [], ls, losCache).lights : v.lights;
   lastCol = ls.length ? { litLights, colStrength, w, h } : null;
+  animOn = litLights.some(l => l.anim && l.anim !== 'none');
   drawColour(t);
 
   // darkness, lit holes and (for players) sight
@@ -149,28 +186,31 @@ function render(now) {
     c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.filter = 'none'; c.globalAlpha = 1;
     c.clearRect(0, 0, VIS.c.width, VIS.c.height);
     const soft = `blur(${Math.max(1, Math.round(ST().gs() * 0.05 * VIS.k))}px)`;
+    scratch(HOLES, VIS.c.width, VIS.c.height);
+    const hc = HOLES.ctx; hc.setTransform(1, 0, 0, 1, 0, 0); hc.globalCompositeOperation = 'source-over'; hc.clearRect(0, 0, HOLES.c.width, HOLES.c.height);
     if (sightOn) {
       c.fillStyle = '#000'; c.fillRect(0, 0, VIS.c.width, VIS.c.height);
       // what's been explored stays dimly visible, less so the darker it is: in total darkness there's nothing to see by
       const remember = !V.isGM();   // players remember what they've seen; the GM's peeks don't count
       const memory = 0.45 * (1 - d);
       if (remember && memory > 0.01 && (EXP.tex || EXP.c.width > 2)) { c.globalCompositeOperation = 'destination-out'; c.globalAlpha = memory; c.drawImage(EXP.c, 0, 0, VIS.c.width, VIS.c.height); c.globalAlpha = 1; }
-      c.setTransform(VIS.k, 0, 0, VIS.k, 0, 0);
-      c.globalCompositeOperation = 'destination-out'; c.filter = soft;
       fit(EXP, w, h, Math.min(0.35, 600 / Math.max(w, h)));
-      const e = EXP.ctx; e.setTransform(EXP.k, 0, 0, EXP.k, 0, 0); e.globalCompositeOperation = 'source-over';
+      const e = EXP.ctx; e.globalCompositeOperation = 'source-over';
+      if (!v.day) drawLit(v.lights, soft);
+      // each viewer sees the lit areas (and their darkvision) within their line of sight
       for (const sv of v.viewers) {
         if (sv.poly.length < 6) continue;
-        for (const [ctx, paint] of remember ? [[c, a => `rgba(0,0,0,${a})`], [e, a => `rgba(255,255,255,${a})`]] : [[c, a => `rgba(0,0,0,${a})`]]) {
+        for (const [ctx, kk] of remember ? [[hc, VIS.k], [e, EXP.k]] : [[hc, VIS.k]]) {
           ctx.save();
+          ctx.setTransform(kk, 0, 0, kk, 0, 0);
           polyPath(ctx, sv.poly); ctx.clip();
           if (sv.range) { ctx.beginPath(); ctx.arc(sv.x, sv.y, sv.range, 0, Math.PI * 2); ctx.clip(); }
-          if (v.day) { ctx.fillStyle = paint(1 - d * 0.7); ctx.fillRect(P.x, P.y, P.w, P.h); }
+          if (v.day) { ctx.fillStyle = `rgba(0,0,0,${1 - d * 0.7})`; ctx.fillRect(P.x, P.y, P.w, P.h); }
           else {
-            for (const l of v.lights) lightShape(ctx, l, null, paint);
+            ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(LIT.c, 0, 0, ctx.canvas.width, ctx.canvas.height); ctx.setTransform(kk, 0, 0, kk, 0, 0);
             if (sv.dark) {
               const g = ctx.createRadialGradient(sv.x, sv.y, 0, sv.x, sv.y, sv.dark);
-              g.addColorStop(0, paint(0.72)); g.addColorStop(0.85, paint(0.6)); g.addColorStop(1, paint(0));
+              g.addColorStop(0, 'rgba(0,0,0,0.72)'); g.addColorStop(0.85, 'rgba(0,0,0,0.6)'); g.addColorStop(1, 'rgba(0,0,0,0)');
               ctx.fillStyle = g; ctx.fillRect(sv.x - sv.dark, sv.y - sv.dark, sv.dark * 2, sv.dark * 2);
             }
           }
@@ -178,13 +218,15 @@ function render(now) {
         }
       }
       if (remember) { EXP.dirty = true; saveExploredSoon(); }
+      c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'destination-out'; c.drawImage(HOLES.c, 0, 0);
     } else if (d > 0) {
       // no sight rules here: darkness everywhere, lights cut through it (the GM's darkness is see-through)
       // a night-blue tint that deepens to pure black at full darkness
       c.fillStyle = `rgba(0,${Math.round(8 * (1 - d))},${Math.round(20 * (1 - d))},${V.isGM() && state.gmSeeDark ? d * 0.5 : d})`; c.fillRect(0, 0, VIS.c.width, VIS.c.height);
-      c.setTransform(VIS.k, 0, 0, VIS.k, 0, 0);
-      c.globalCompositeOperation = 'destination-out'; c.filter = soft;
-      for (const l of litLights) lightShape(c, l, null, a => `rgba(0,0,0,${a})`);
+      if (litLights.length) {
+        drawLit(litLights, soft);
+        c.globalCompositeOperation = 'destination-out'; c.drawImage(LIT.c, 0, 0);
+      }
     }
     c.filter = 'none';
     VIS.tex.baseTexture.update();
@@ -238,11 +280,28 @@ V.lightingTick = function (now) {
   if (animOn && lastCol && now - lastAnim > 90 && !document.hidden) { lastAnim = now; drawColour(now / 1000); }   // flicker: the colour only
 };
 V.lightingRefresh = schedule;
-on('scene', () => { losCache.clear(); loadExplored(); selWall = selLight = null; chain = null; schedule(); V.renderDark(); });
-on('sceneMeta', () => { losCache.clear(); loadExplored(); schedule(); V.renderDark(); });
+on('scene', () => { clearLos(); wallSnap = snapWalls(); loadExplored(); selWall = selLight = null; chain = null; schedule(); V.renderDark(); });
+on('sceneMeta', () => { clearLos(); wallSnap = snapWalls(); loadExplored(); schedule(); V.renderDark(); });
 on('tokens', schedule); on('tokenDrag', schedule); on('me', schedule);
 on('sel', () => { if (V.isGM() && state.scene && state.scene.meta.vision) { schedule(); V.hud(V.isGM() && [...state.sel].some(id => { const t = state.scene.tokens.get(id); return t && !t.prop; }) && !state.viewAs ? 'Seeing what the selected token sees · click empty floor to see everything again' : undefined); } });
-on('walls', () => { losCache.clear(); if (selWall && !state.scene.walls.has(selWall)) selWall = null; schedule(); if (state.tool === 'walls') V.renderSubtools(); });
+// a wall changed (a door opened, say): only the shapes that wall can touch are worked out again
+let wallSnap = new Map();
+function snapWalls() { const m = new Map(); for (const w of walls()) m.set(w.id, w.a.join(',') + ',' + w.b.join(',') + ',' + w.kind + ',' + !!w.open + ',' + !!w.flip); return m; }
+function wallsChanged() {
+  const now = snapWalls(), changed = [];
+  for (const [id, sig] of now) if (wallSnap.get(id) !== sig) changed.push(sig);
+  for (const [id, sig] of wallSnap) if (!now.has(id)) changed.push(sig);
+  wallSnap = now;
+  if (!changed.length) return;
+  if (changed.length > 40) { clearLos(); return; }
+  const segs = changed.map(sig => sig.split(',').slice(0, 4).map(Number));
+  for (const key of [...losCache.keys()]) {
+    const [, kx, ky, kr] = key.split(':'), x = kx / 10, y = ky / 10, r = +kr;
+    if (!(r > 0) || segs.some(([ax, ay, bx, by]) => segDist([x, y], [ax, ay], [bx, by]) <= r + 1)) losCache.delete(key);
+  }
+  losVer++;
+}
+on('walls', () => { wallsChanged(); if (selWall && !state.scene.walls.has(selWall)) selWall = null; schedule(); if (state.tool === 'walls') V.renderSubtools(); });
 on('lights', () => { if (selLight && !state.scene.lights.has(selLight)) selLight = null; schedule(); V.renderDark(); if (state.tool === 'lights') V.renderSubtools(); });
 
 // --- explored areas: kept in this browser, per scene, until the GM wipes them ---
@@ -293,29 +352,54 @@ function dashed(g, a, b, step) {
 }
 
 // --- doors: a small button in the middle of each door ---
+// (the buttons are made again only when a door changes or the zoom does; otherwise they're just shown or hidden)
+let doorKey = null;
+const doorGfx = new Map();
 function drawDoors(ws, v, viewers) {
-  const box = ST().L.doors; box.removeChildren().forEach(c => c.destroy({ children: true }));
-  const gm = V.isGM(), S = ST().scale(), size = 18 / S;
-  for (const w of ws) {
-    if (!(w.kind === 'door' || (gm && w.kind === 'secret'))) continue;
-    const mx = (w.a[0] + w.b[0]) / 2, my = (w.a[1] + w.b[1]) / 2;
+  const box = ST().L.doors;
+  const gm = V.isGM();
+  const doors = ws.filter(w => w.kind === 'door' || (gm && w.kind === 'secret'));
+  const key = gm + '|' + doors.map(w => [w.id, w.a, w.b, w.kind, w.open, w.locked].join(',')).join(';');
+  if (key !== doorKey) {
+    doorKey = key; doorGfx.clear();
+    box.removeChildren().forEach(c => c.destroy({ children: true }));
+    for (const w of doors) doorGfx.set(w.id, makeDoor(w, gm));
+  }
+  for (const w of doors) {
+    const b = doorGfx.get(w.id); if (!b) continue;
+    let show = true;
     if (!gm && viewers) {   // players get a door's button once they can see the door (from either side)
+      const mx = (w.a[0] + w.b[0]) / 2, my = (w.a[1] + w.b[1]) / 2;
       const dx = w.b[0] - w.a[0], dy = w.b[1] - w.a[1], len = Math.hypot(dx, dy) || 1, o = Math.max(2, ST().gs() * 0.06);
       const pts = [[mx + dy / len * o, my - dx / len * o], [mx - dy / len * o, my + dx / len * o]];
-      if (!v.viewers.some(s => pts.some(q => Vision.inPoly(s.poly, q[0], q[1])))) continue;
+      show = v.viewers.some(s => pts.some(q => Vision.inPoly(s.poly, q[0], q[1])));
     }
+    b.seen = show;
+  }
+  sizeDoors();
+}
+// the buttons keep their size on screen as you zoom (just scaled, not redrawn), and go when a square is too small to click
+function sizeDoors() {
+  if (!ST()) return;
+  const S = ST().scale(), tooSmall = S * ST().gs() < 12;
+  for (const b of doorGfx.values()) { b.scale.set(1 / S); b.visible = b.seen !== false && !tooSmall; }
+}
+V.lightingZoom = sizeDoors;
+function makeDoor(w, gm) {
+    const box = ST().L.doors, size = 18;
+    const mx = (w.a[0] + w.b[0]) / 2, my = (w.a[1] + w.b[1]) / 2;
     const b = new PIXI.Graphics();
     const col = w.kind === 'secret' ? 0xb466e0 : w.locked ? 0xc0584a : 0xd9a441;
-    b.lineStyle(1.5 / S, 0x000000, 0.6).beginFill(w.open ? 0x1b2028 : col, 0.95).drawRoundedRect(-size / 2, -size / 2, size, size, 3 / S).endFill();
-    b.lineStyle(1.5 / S, w.open ? col : 0x1b2028, 1);
+    b.lineStyle(1.5, 0x000000, 0.6).beginFill(w.open ? 0x1b2028 : col, 0.95).drawRoundedRect(-size / 2, -size / 2, size, size, 3).endFill();
+    b.lineStyle(1.5, w.open ? col : 0x1b2028, 1);
     if (w.open) b.moveTo(-size * 0.25, -size * 0.3).lineTo(-size * 0.25, size * 0.3).lineTo(size * 0.2, size * 0.18).lineTo(size * 0.2, -size * 0.42).lineTo(-size * 0.25, -size * 0.3);
     else b.drawRect(-size * 0.22, -size * 0.32, size * 0.44, size * 0.64);
     if (w.locked && gm) b.lineStyle(0).beginFill(0xffffff).drawCircle(size * 0.3, size * 0.3, size * 0.12).endFill();
     b.position.set(mx, my);
-    b.eventMode = 'static'; b.cursor = 'pointer';
+    b.eventMode = 'static'; b.cursor = 'pointer'; b.cullable = true;   // (off screen: not drawn)
     b.on('pointerdown', e => { e.stopPropagation(); if (e.button === 0) toggleDoor(w); });
     box.addChild(b);
-  }
+    return b;
 }
 function toggleDoor(w) {
   V.send({ t: 'op', op: { t: 'door.toggle', scene: state.scene.id, id: w.id } }).catch(err => {
@@ -402,7 +486,7 @@ V.toolHandlers.walls = {
       endDrag.moved = true;
       endDrag.to = hover;
       for (const [id, k] of endDrag.ends) { const w = state.scene.walls.get(id); if (w) w[k] = hover; }   // preview; the server confirms on release
-      losCache.clear();
+      clearLos();
     }
     schedule();
   },

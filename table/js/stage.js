@@ -8,6 +8,7 @@ const L = {};
 const nodes = new Map();        // token id -> Pixi container
 const texCache = new Map();     // url -> texture | 'loading' | 'error'
 const others = new Map();       // uid -> { g, label } for other people's rulers
+let hoverTok = null;             // the token under the pointer (its name shows)
 const hexNum = c => parseInt(String(c || '#888888').slice(1), 16);
 const S = () => world.scale.x;
 const gs = () => V.grid().size || 100;
@@ -81,8 +82,10 @@ V.initStage = function () {
   app.view.addEventListener('touchend', ev => { if (pinch && ev.touches.length < 2) { pinch = null; drag = null; saveCam(); } });
   app.view.addEventListener('dblclick', onDbl);
   stageEl.addEventListener('dragover', e => {
-    const item = (V.itemDragType && e.dataTransfer.types.includes(V.itemDragType)) || (V.spellDragType && e.dataTransfer.types.includes(V.spellDragType));   // item and spell cards: anyone (onto their tokens)
-    if (V.isGM() || item) { e.preventDefault(); e.dataTransfer.dropEffect = item ? 'move' : 'copy'; }
+    const item = (V.itemDragType && e.dataTransfer.types.includes(V.itemDragType)) || (V.spellDragType && e.dataTransfer.types.includes(V.spellDragType))
+      || (V.featureDragType && e.dataTransfer.types.includes(V.featureDragType));   // item, spell and feature cards: anyone (onto their tokens)
+    const myChar = !V.isGM() && V.charDragType && e.dataTransfer.types.includes(V.charDragType);   // a player's own character: their token
+    if (V.isGM() || item || myChar) { e.preventDefault(); e.dataTransfer.dropEffect = item ? 'move' : 'copy'; }   // (a Bestiary creature: the GM's)
   });
   document.addEventListener('dragstart', e => { if (e.dataTransfer && e.target.closest && e.target.closest('.crow2')) document.body.classList.add('chardrag'); });
   document.addEventListener('dragend', () => document.body.classList.remove('chardrag'));
@@ -135,6 +138,7 @@ function onWheel(e) {
 // labels and bars keep a readable size on screen
 function onZoom() {
   L.label.scale.set(1 / S());
+  if (V.lightingZoom) V.lightingZoom();
   for (const o of others.values()) o.label.scale.set(1 / S());
   if (drag && drag.kind === 'ruler') drawRuler();
 }
@@ -175,10 +179,31 @@ function renderBg() {
   if (m.image && m.image.url) {
     loadTex(m.image.url).then(tex => {
       if (!state.scene || state.scene.meta.image !== m.image) return;
+      tex = bigMap(tex);
       L.map.texture = tex; L.map.width = m.image.w; L.map.height = m.image.h;
     }).catch(() => V.toast('The map image could not be loaded', true));
   } else L.map.texture = PIXI.Texture.EMPTY;
 }
+// A battlemap picture: mipmapped (smooth and quicker to draw zoomed out, whatever its size), and shrunk to fit if
+// it's bigger than this graphics card can hold in one piece (it would otherwise show black).
+function bigMap(tex) {
+  const bt = tex.baseTexture;
+  if (bt.__vtt) return bt.__vtt === true ? tex : bt.__vtt;
+  const gl = app.renderer.gl, max = gl ? gl.getParameter(gl.MAX_TEXTURE_SIZE) : 8192;
+  const src = bt.resource && bt.resource.source;
+  if (src && (bt.width > max || bt.height > max)) {
+    const k = max / Math.max(bt.width, bt.height), c = document.createElement('canvas');
+    c.width = Math.floor(bt.width * k); c.height = Math.floor(bt.height * k);
+    c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+    const t2 = PIXI.Texture.from(c, { mipmap: PIXI.MIPMAP_MODES.ON });
+    bt.__vtt = t2;
+    return t2;
+  }
+  if (app.renderer.context.webGLVersion === 2 || (isPow2(bt.width) && isPow2(bt.height))) { bt.mipmap = PIXI.MIPMAP_MODES.ON; bt.update(); }
+  bt.__vtt = true;
+  return tex;
+}
+const isPow2 = n => n > 0 && (n & (n - 1)) === 0;
 function loadTex(url) {
   const c = texCache.get(url);
   if (c && c.then) return c;
@@ -277,7 +302,7 @@ function drawToken(t) {
   let n = nodes.get(t.id);
   if (!n) {
     n = new PIXI.Container();
-    n.tid = t.id;
+    n.tid = t.id; n.cullable = true;   // (off screen: not drawn)
     n.on('pointerdown', e => onTokenDown(e, n.tid));
     nodes.set(t.id, n);
   }
@@ -324,15 +349,21 @@ function drawToken(t) {
     const ini = new PIXI.Text(V.initials(t.name), textStyle(Math.max(8, d * 0.34), { strokeThickness: 0, fill: 0xffffff }));
     ini.anchor.set(0.5); ini.resolution = 2; n.addChild(ini);
   }
-  // ring: owner's colour, gold when selected
-  const owner = (t.owners || []).map(V.member).find(Boolean);
+  // selected: a ring (or corner brackets round a bare sprite) in the colour of whoever plays it, gold for the GM's own
+  const owners = (t.owners || []).map(V.member).filter(Boolean);
+  const owner = owners.find(u => u.role !== 'gm') || owners[0];
+  const selCol = owner && owner.color ? hexNum(owner.color) : 0xc9a45c;
   const ring = new PIXI.Graphics();
   if (ringOn || !ready) {
-    ring.lineStyle(Math.max(1.5, d * 0.035), owner ? hexNum(owner.color) : 0x1a1a1a, 0.95).drawCircle(0, 0, r);
-    if (sel) ring.lineStyle(Math.max(2.5, d * 0.05), 0xc9a45c, 1).drawCircle(0, 0, r + Math.max(3, d * 0.05));
+    if (!ready) ring.lineStyle(Math.max(1.5, d * 0.035), 0x1a1a1a, 0.95).drawCircle(0, 0, r);   // (a picture still loading)
+    if (sel) {
+      const w = Math.max(2.5, d * 0.05), R = r + Math.max(3, d * 0.05);
+      ring.lineStyle(w * 2.6, selCol, 0.22).drawCircle(0, 0, R);   // a soft glow under the line
+      ring.lineStyle(w, selCol, 1).drawCircle(0, 0, R);
+    }
   } else if (sel) {   // a bare sprite: corner brackets round it when selected
     const p = Math.max(3, d * 0.04), x0 = -half - p, y0 = -top - p, x1 = half + p, y1 = bottom + p, c = Math.min(x1 - x0, y1 - y0) * 0.22;
-    ring.lineStyle(Math.max(2, d * 0.035), 0xc9a45c, 1);
+    ring.lineStyle(Math.max(2, d * 0.035), selCol, 1);
     for (const [x, y, sx, sy] of [[x0, y0, 1, 1], [x1, y0, -1, 1], [x0, y1, 1, -1], [x1, y1, -1, -1]]) ring.moveTo(x + sx * c, y).lineTo(x, y).lineTo(x, y + sy * c);
   }
   n.addChild(ring);
@@ -347,12 +378,15 @@ function drawToken(t) {
     bar.beginFill(col).drawRoundedRect(-bw / 2, y, bw * k, bh, bh / 2).endFill();
     n.addChild(bar);
   });
-  // name
+  // name: shown while the pointer is over the token, or while it's selected
   if (t.name && (t.nameShown || V.canControl(t))) {
     const nm = new PIXI.Text(t.name, textStyle(V.clamp(gs() * 0.25 * Math.max(1, Math.sqrt(t.size || 1)), 11, 64)));
     nm.anchor.set(0.5, 0); nm.position.set(0, bottom + 2); nm.resolution = 2;
     if (!t.nameShown) nm.alpha = 0.6;
+    nm.visible = !!sel || hoverTok === t.id;
     n.addChild(nm);
+    n.on('pointerover', () => { hoverTok = t.id; nm.visible = true; });
+    n.on('pointerout', () => { if (hoverTok === t.id) hoverTok = null; nm.visible = !!state.sel.has(t.id); });
   }
   // conditions: small badges around the top-right
   (t.conditions || []).slice(0, 8).forEach((cname, i) => {
@@ -905,9 +939,29 @@ async function onDropFiles(e) {
     if (sp && t && t.sheet) return V.learnSpell(t.sheet, sp);
     return V.toast('Drop a spell on a character’s token, their sheet or their name in the Journal', true);
   }
-  if (!V.isGM()) return;
+  if (V.featureDragType && e.dataTransfer.types.includes(V.featureDragType)) {   // a feature onto a token with a sheet: onto the sheet
+    e.preventDefault();
+    const f = V.readFeatureDrag(e), p = V.worldAt(e.clientX, e.clientY), t = V.tokenAt(p.x, p.y);
+    if (f && t && t.sheet) return V.learnFeature(t.sheet, f);
+    return V.toast('Drop a feature on a character’s token, their sheet or their name in the Journal', true);
+  }
+  if (!V.isGM()) {
+    const cid = V.charDragType && e.dataTransfer.getData(V.charDragType);
+    if (!cid || !state.scene) return;
+    e.preventDefault();
+    const ch = (state.camp.characters || []).find(x => x.id === cid); if (!ch) return;
+    if ((state.scene.tokens || []).some(t => t.sheet === ch.id)) return V.toast(`${ch.name} is already on this map`, true);
+    const p = V.worldAt(e.clientX, e.clientY), [x, y] = Geom.snap(V.grid(), p.x, p.y, 1);
+    const res = await V.op({ t: 'token.create', scene: state.scene.id, token: { name: ch.name, sheet: ch.id, img: (await V.charTokenImg(ch)) || null, x, y, size: 1, layer: 'tokens' } }).catch(() => null);
+    if (res && res.op && res.op.token) setSel([res.op.token.id]);
+    return;
+  }
   e.preventDefault();
   if (!state.scene) return V.toast('Make a scene first', true);
+  if (V.monsterDragType && e.dataTransfer.types.includes(V.monsterDragType)) {   // a creature from the Bestiary: an NPC and its token
+    const p = V.worldAt(e.clientX, e.clientY);
+    return V.monsterToMap(e.dataTransfer.getData(V.monsterDragType), p.x, p.y);
+  }
   if (V.artDragType && e.dataTransfer.types.includes(V.artDragType)) {   // a picture from the art library
     let a = null; try { a = JSON.parse(e.dataTransfer.getData(V.artDragType)); } catch (err) {}
     const p = V.worldAt(e.clientX, e.clientY);

@@ -82,9 +82,21 @@
       const x0 = Math.min(b.x, ox - 1), y0 = Math.min(b.y, oy - 1), x1 = Math.max(b.x + b.w, ox + 1), y1 = Math.max(b.y + b.h, oy + 1);
       edge.push([x0, y0, x1, y0], [x1, y0, x1, y1], [x1, y1, x0, y1], [x0, y1, x0, y0]);
     }
-    const all = segs.concat(edge);
-    const angles = [];
-    for (const s of all) for (const [px, py] of [[s[0], s[1]], [s[2], s[3]]]) {
+    const all = segs.concat(edge), n = all.length;
+    // Segments nearest the eye first: a ray stops looking once the next segment is further away than its best hit
+    // (a segment can't be hit closer than its nearest point), so on a big map of many rooms each ray only tests the
+    // handful of walls round the eye instead of all of them.
+    const S = new Float64Array(n * 4), D = new Float64Array(n), order = new Array(n);
+    for (let i = 0; i < n; i++) { order[i] = i; D[i] = Math.sqrt(segDist2(ox, oy, all[i][0], all[i][1], all[i][2], all[i][3])); }
+    order.sort((p, q) => D[p] - D[q]);
+    const SD = new Float64Array(n);
+    for (let j = 0; j < n; j++) { const s = all[order[j]]; S[j * 4] = s[0]; S[j * 4 + 1] = s[1]; S[j * 4 + 2] = s[2]; S[j * 4 + 3] = s[3]; SD[j] = D[order[j]]; }
+    // one set of rays per corner (walls meeting at a corner share it)
+    const seen = new Set(), angles = [];
+    for (const s of all) for (let e = 0; e < 4; e += 2) {
+      const px = s[e], py = s[e + 1], key = px + ',' + py;
+      if (seen.has(key)) continue;
+      seen.add(key);
       const a = Math.atan2(py - oy, px - ox);
       angles.push(a - 1e-4, a, a + 1e-4);
     }
@@ -96,9 +108,15 @@
       last = a;
       const dx = Math.cos(a), dy = Math.sin(a);
       let best = Infinity;
-      for (const s of all) {
-        const t = rayHit(ox, oy, dx, dy, s);
-        if (t < best) best = t;
+      for (let j = 0; j < n; j++) {
+        if (SD[j] >= best) break;
+        const k = j * 4, sx = S[k + 2] - S[k], sy = S[k + 3] - S[k + 1];
+        const d = dx * sy - dy * sx;
+        if (Math.abs(d) < 1e-12) continue;
+        const t = ((S[k] - ox) * sy - (S[k + 1] - oy) * sx) / d;
+        if (t < 0 || t >= best) continue;
+        const u = ((S[k] - ox) * dy - (S[k + 1] - oy) * dx) / d;
+        if (u >= -1e-9 && u <= 1 + 1e-9) best = t;
       }
       if (best === Infinity) continue;
       out.push(ox + dx * best, oy + dy * best);

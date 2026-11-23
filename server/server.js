@@ -22,6 +22,30 @@ const R20 = require('../table/shared/r20roll.js');
 const Vision = require('../table/shared/vision.js');
 const Plan = require('../table/shared/plan.js');
 const Sheet5e = require('../table/shared/sheet5e.js');
+// "Human, Fighter, 5th Level" (or "Elf, Fighter 3 / Wizard 2, 5th Level") from a 5e sheet, for the journal
+const summaryCache = new Map();   // character id → [key, summary]; the key is just the attributes the summary reads
+function charSummary(ch) {
+  if (!ch.attrs || !/^dnd5e/.test(ch.sheet || '')) return '';
+  const a = ch.attrs, key = [ch.sheet, a.is_npc, a.npc_size, a.npc_type, a.npc_challenge, a.race, a.class, a.cust_classname, a.base_level, a.level, ...(Sheet5e.CLASSES || []).map(k => a[k + '_level'])].join('|');
+  const hit = summaryCache.get(ch.id); if (hit && hit[0] === key) return hit[1];
+  const out = charSummaryOf(ch); summaryCache.set(ch.id, [key, out]); return out;
+}
+function charSummaryOf(ch) {
+  const a = ch.attrs;
+  if (String(a.is_npc) === '1' || a.is_npc === 'on') {   // an NPC: "Large Aberration, CR 10"
+    const what = [a.npc_size, a.npc_type].map(x => String(x || '').trim()).filter(Boolean).join(' ');
+    return [what, a.npc_challenge !== undefined && a.npc_challenge !== '' ? 'CR ' + a.npc_challenge : ''].filter(Boolean).join(', ');
+  }
+  try {
+    const m = Sheet5e.toModel(ch.sheet, ch.attrs);
+    const cap = s => String(s).replace(/\b\w/g, x => x.toUpperCase());
+    const cls = Object.entries(m.classLevels || {}).filter(([, l]) => l > 0);
+    const total = cls.reduce((s, [, l]) => s + l, 0) || (m.cls ? m.level || 1 : 0);
+    const ord = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+    const clsText = cls.length > 1 ? cls.sort((a, b) => b[1] - a[1]).map(([k, l]) => `${cap(k)} ${l}`).join(' / ') : (m.cls ? cap(m.cls) : cls.length ? cap(cls[0][0]) : '');
+    return [m.race ? String(m.race).trim() : '', clsText, total ? ord(total) + ' Level' : ''].filter(Boolean).join(', ');
+  } catch (e) { return ''; }
+}
 const Cal = require('../table/shared/calendar.js');
 const Foundry = require('./foundry.js');
 const Roll20 = require('./roll20.js');
@@ -528,7 +552,7 @@ async function importRoll20(room, user, b) {
       if (t.hp && t.hp.max) tok.hp = t.hp;
       if (ch) {
         tok.sheet = ch.id;
-        if (!tok.img && ch.avatar) tok.img = ch.avatar;
+        if (!tok.img && (ch.token || ch.avatar)) tok.img = ch.token || ch.avatar;
         if (!tok.hp) { const reg = SHEETS[ch.sheet] || {}, v = ch.attrs[reg.hp || 'hp'], max = ch.attrs[reg.hpMax || 'hp_max']; if (v != null && v !== '') tok.hp = { v: num(v, 0), max: num(max, 0) || num(v, 0) }; }
       }
       sc.tokens.push(tok);
@@ -659,7 +683,7 @@ function importFoundry(room, user, b) {
       const tok = newToken({ name: t.name, x: t.x, y: t.y, size: t.size, img: pic(t.img), layer: t.layer, rot: t.rot, nameShown: t.nameShown, sight: t.sight, light: t.light });
       if (a) {
         tok.sheet = a.ch.id;
-        if (!tok.img && a.ch.avatar) tok.img = a.ch.avatar;
+        if (!tok.img && (a.ch.token || a.ch.avatar)) tok.img = a.ch.token || a.ch.avatar;
         const reg = SHEETS[a.ch.sheet] || {}, v = a.ch.attrs[reg.hp || 'hp'], max = a.ch.attrs[reg.hpMax || 'hp_max'];
         if (v != null && v !== '') tok.hp = { v: num(v, 0), max: num(max, 0) || num(v, 0) };
         if (tok.sight && a.dark && !tok.sight.dark) tok.sight.dark = a.dark;
@@ -730,7 +754,7 @@ function cleanTokenPatch(p) {
   if ('x' in p) out.x = num(p.x, 0, -1e5, 1e5);
   if ('y' in p) out.y = num(p.y, 0, -1e5, 1e5);
   if ('size' in p) out.size = num(p.size, 1, 0.25, 30);
-  if ('img' in p) out.img = p.img ? str(p.img, 300) : null;
+  if ('img' in p) out.img = p.img ? str(p.img, 600) : null;
   if ('color' in p) out.color = /^#[0-9a-f]{6}$/i.test(p.color) ? p.color : '#888888';
   if ('owners' in p) out.owners = (Array.isArray(p.owners) ? p.owners : []).map(x => str(x, 40)).filter(userById).slice(0, 20);
   if ('layer' in p) out.layer = p.layer === 'gm' || p.layer === 'map' ? p.layer : 'tokens';   // map: part of the scenery, under the tokens
@@ -785,7 +809,7 @@ function linkToken(t, ch, c) {
 function cleanHandout(p, c) {
   const out = {};
   if ('name' in p) out.name = str(p.name, 120) || 'Handout';
-  if ('img' in p) out.img = p.img ? str(p.img, 300) : null;
+  if ('img' in p) out.img = p.img ? str(p.img, 600) : null;
   if ('text' in p) out.text = str(p.text, 60000);
   if ('gmNotes' in p) out.gmNotes = str(p.gmNotes, 30000);
   if ('shared' in p) out.shared = !!p.shared;
@@ -908,12 +932,21 @@ class Room {
         return { t: 'scene.create', scene: s, index: i, restore: true };
       }
       case 'token.create': {
-        if (!op.restore) needGM();
+        // players: a token for a character of their own, onto the scene they're on, one each
+        if (!op.restore && !gm) {
+          const ch = op.token && c.characters.find(x => x.id === op.token.sheet);
+          if (!ch || !(ch.owners || []).includes(user.id)) throw new Error('Only the GM can place tokens (yours: drag your character from the Journal)');
+          const sc = this.scene(op.scene);
+          if (sc.id !== c.playerScene) throw new Error('You can only place your character on the scene you’re on');
+          if (sc.tokens.some(x => x.sheet === ch.id)) throw new Error(`${ch.name} is already on this map`);
+          op.token = Object.assign({}, op.token, { layer: 'tokens', hidden: false, size: 1 });
+        }
+        if (op.restore) needGM();
         const s = this.scene(op.scene);
         const t = op.restore ? op.token : newToken(op.token);
         if (!op.restore && t.sheet) {   // a token made from a character: its picture, name, HP and players
           const ch = c.characters.find(x => x.id === t.sheet);
-          if (!ch) t.sheet = null; else { if (!t.img && ch.avatar) t.img = ch.avatar; linkToken(t, ch, c); }
+          if (!ch) t.sheet = null; else { if (!t.img && (ch.token || ch.avatar)) t.img = ch.token || ch.avatar; linkToken(t, ch, c); }
         }
         if (!op.restore && t.layer === 'map' && playerTokenish(t, c)) t.layer = 'tokens';   // the players' tokens live on the token layer
         if (s.tokens.some(x => x.id === t.id)) throw new Error('Token exists');
@@ -1115,8 +1148,8 @@ class Room {
           if (!gm && k === 'sheet' && !(SHEETS[p.sheet] && SHEETS[ch.sheet] && SHEETS[p.sheet].mode === SHEETS[ch.sheet].mode)) continue;
           prev[k] = clone(ch[k] ?? null);
           if (k === 'name') ch.name = str(p.name, 80) || ch.name;
-          if (k === 'avatar') ch.avatar = p.avatar ? str(p.avatar, 300) : null;
-          if (k === 'token') ch.token = p.token ? str(p.token, 300) : null;
+          if (k === 'avatar') ch.avatar = p.avatar ? str(p.avatar, 600) : null;
+          if (k === 'token') ch.token = p.token ? str(p.token, 600) : null;
           if (k === 'owners') {
             const before = playerOwners(ch, c);
             ch.owners = (Array.isArray(p.owners) ? p.owners : []).map(x => str(x, 40)).filter(userById);
@@ -1171,15 +1204,25 @@ class Room {
         op.char = { id: ch.id, name: ch.name };
         return { t: 'char.delete', id: ch.id };
       }
-      case 'folders.set': {   // the GM's character folders: [{id, name}], in order
+      case 'folders.set': {   // the GM's character folders: [{id, name, parent}], in order; folders can sit inside folders
         needGM();
         const prev = clone(c.charFolders);
+        const oldParent = new Map((c.charFolders || []).map(f => [f.id, f.parent || null]));
         const seen = new Set();
-        c.charFolders = (Array.isArray(op.folders) ? op.folders : []).slice(0, 200).map(f => ({
-          id: f && /^[a-z0-9]{1,30}$/i.test(f.id) ? f.id : id('d'), name: str(f && f.name, 60) || 'Folder' })).filter(f => !seen.has(f.id) && seen.add(f.id));
+        const list = (Array.isArray(op.folders) ? op.folders : []).slice(0, 200).map(f => ({
+          id: f && /^[a-z0-9]{1,30}$/i.test(f.id) ? f.id : id('d'), name: str(f && f.name, 60) || 'Folder', parent: f && typeof f.parent === 'string' ? f.parent : null })).filter(f => !seen.has(f.id) && seen.add(f.id));
+        // a parent must exist, and no folder may end up inside itself
+        for (const f of list) {
+          if (!f.parent || !seen.has(f.parent) || f.parent === f.id) { f.parent = null; continue; }
+          for (let p = f.parent, n = 0; p; n++) { if (p === f.id || n > 200) { f.parent = null; break; } const pf = list.find(x => x.id === p); p = pf ? pf.parent : null; }
+        }
+        for (const f of list) if (!f.parent) delete f.parent;
+        c.charFolders = list;
+        // what was in a folder that's gone moves to the nearest folder above it that's still here
+        const home = fid => { for (let p = fid, n = 0; p && n < 200; n++) { if (seen.has(p)) return p; p = oldParent.get(p) || null; } return null; };
         const moved = [];
-        for (const ch of c.characters) if (ch.folder && !c.charFolders.some(f => f.id === ch.folder)) { moved.push(['char.update', ch.id, ch.folder]); ch.folder = null; }
-        for (const ho of c.handouts) if (ho.folder && !c.charFolders.some(f => f.id === ho.folder)) { moved.push(['handout.update', ho.id, ho.folder]); ho.folder = null; }
+        for (const ch of c.characters) if (ch.folder && !seen.has(ch.folder)) { moved.push(['char.update', ch.id, ch.folder]); ch.folder = home(ch.folder); }
+        for (const ho of c.handouts) if (ho.folder && !seen.has(ho.folder)) { moved.push(['handout.update', ho.id, ho.folder]); ho.folder = home(ho.folder); }
         return { t: 'batch', ops: [{ t: 'folders.set', folders: prev }, ...moved.map(([t, cid, f]) => ({ t, id: cid, patch: { folder: f } }))] };
       }
       case 'handout.create': {
@@ -1282,6 +1325,27 @@ class Room {
           text: str(sp.text, 40000), higher: str(sp.higher, 8000), attack: str(sp.attack, 10), save: str(sp.save, 3), damage: str(sp.damage, 20), dice: str(sp.dice, 40) };
         if (!clean.name) throw new Error('Which spell?');
         const set = Sheet5e.addSpell(ch.sheet, ch.attrs, clean);
+        if (!Object.keys(set).length) throw new Error(`${ch.name} already has ${clean.name}`);
+        const prevAttrs = {};
+        const lower = Object.fromEntries(Object.entries(set).map(([k, v]) => [k.toLowerCase(), v]));
+        for (const k of Object.keys(lower)) prevAttrs[k] = k in ch.attrs ? ch.attrs[k] : null;
+        Object.assign(ch.attrs, lower);
+        ch.recalc = [...new Set((ch.recalc || []).concat(Object.keys(lower)))].slice(0, 3000);
+        this.charBroadcast(ch, { set: lower, remove: [] });
+        return { t: 'char.attrs.restore', char: ch.id, attrs: prevAttrs, restore: true };
+      }
+      case 'feat.learn': {   // a feature card dropped on a character: onto their sheet's features
+        const ch = this.character(op.char);
+        if (!gm && !this.canEditChar(user, ch)) throw new Error('That isn’t your character');
+        if (!/^dnd5e/.test(ch.sheet)) throw new Error('Only D&D 5e sheets have a features list');
+        const f = op.feature && typeof op.feature === 'object' ? op.feature : {};
+        const clean = { name: str(f.name, 120), text: str(f.text, 40000), kind: ['class', 'race', 'feat', 'background'].includes(f.kind) ? f.kind : 'feat', cls: str(f.cls, 40) };
+        if (!clean.name) throw new Error('Which feature?');
+        // a background: its name, skills, tool and feat
+        const set = clean.kind === 'background'
+          ? Sheet5e.addBackground(ch.sheet, ch.attrs, { name: clean.name, skills: (Array.isArray(f.skills) ? f.skills : []).slice(0, 6).map(x => str(x, 30)), tool: str(f.tool, 200),
+            feat: f.feat && typeof f.feat === 'object' && f.feat.name ? { name: str(f.feat.name, 120), text: str(f.feat.text, 40000) } : null })
+          : Sheet5e.addFeature(ch.sheet, ch.attrs, clean);
         if (!Object.keys(set).length) throw new Error(`${ch.name} already has ${clean.name}`);
         const prevAttrs = {};
         const lower = Object.fromEntries(Object.entries(set).map(([k, v]) => [k.toLowerCase(), v]));
@@ -1543,12 +1607,17 @@ class Room {
       scenes: gm ? c.scenes.map(s => ({ id: s.id, name: s.name, folder: s.folder || null, kind: s.kind || 'battle', thumb: s.thumb || (s.image && s.image.url) || null, hasThumb: !!s.thumb, atlas: s.atlas || null,
         atlasName: s.atlas ? ((site.getAtlas(s.atlas) || {}).name || 'A missing version') : undefined })) : [],
       characters: c.characters.filter(ch => this.canViewChar(user, ch)).map(ch => ({ id: ch.id, name: ch.name, sheet: ch.sheet, avatar: ch.avatar, token: ch.token || null,
-        owners: ch.owners, shared: ch.shared, folder: ch.folder || null, canEdit: this.canEditChar(user, ch), items: ch.items || [] })),
+        owners: ch.owners, shared: ch.shared, folder: ch.folder || null, canEdit: this.canEditChar(user, ch), items: ch.items || [], summary: charSummary(ch) })),
       items: gm ? c.items : [],
       handouts: c.handouts.filter(ho => this.canViewHandout(user, ho)).map(ho => gm ? ho
         : { id: ho.id, name: ho.name, folder: ho.folder, img: ho.img, text: ho.text }),
-      charFolders: c.charFolders.filter(f => gm || c.characters.some(ch => ch.folder === f.id && this.canViewChar(user, ch))
-        || c.handouts.some(ho => ho.folder === f.id && this.canViewHandout(user, ho))),
+      charFolders: (() => {   // a player sees the folders with something of theirs in, and the folders those sit inside
+        if (gm) return c.charFolders;
+        const keep = new Set(c.charFolders.filter(f => c.characters.some(ch => ch.folder === f.id && this.canViewChar(user, ch))
+          || c.handouts.some(ho => ho.folder === f.id && this.canViewHandout(user, ho))).map(f => f.id));
+        for (const fid of [...keep]) for (let p = (c.charFolders.find(f => f.id === fid) || {}).parent, n = 0; p && n < 200; n++) { keep.add(p); p = (c.charFolders.find(f => f.id === p) || {}).parent; }
+        return c.charFolders.filter(f => keep.has(f.id));
+      })(),
       sheets: Object.fromEntries(Object.entries(SHEETS).map(([k, v]) => [k, { name: v.name, mode: v.mode }])),
       audio: gm ? Object.assign({ tracks: c.audio.tracks, playlists: c.audio.playlists }, c.audio) : { fade: c.audio.fade, ch: c.audio.ch, tracks: c.audio.tracks.filter(t => CHANNELS.some(k => c.audio.ch[k].track === t.id)).map(t => ({ id: t.id, url: t.url, dur: t.dur })) } };
   }
@@ -1798,12 +1867,83 @@ const cleanLook = l => {
   if (l.tale && typeof l.tale === 'object') out.tale = { id: str(l.tale.id, 40), i: Math.round(num(l.tale.i, 0, 0, 500)), playing: !!l.tale.playing };
   return out;
 };
+// ───────── the map's chat, and the GMs' sketches on it ─────────
+// A little chat for everyone logged in with the map open (kept, the last 300), and a layer of drawings the GMs make on
+// the map: only GMs see one until a GM shows it to the players. Both in vtt-data/mapchat.json.
+const MAPCHAT_FILE = path.join(DATA, 'mapchat.json');
+const mapChat = Object.assign({ chat: [], sketches: [] }, readJSON(MAPCHAT_FILE, {}));
+let mapChatTimer = null;
+const saveMapChat = () => { if (!mapChatTimer) mapChatTimer = setTimeout(() => { mapChatTimer = null; try { writeJSON(MAPCHAT_FILE, mapChat); } catch (e) { log('Map chat not saved: ' + e.message); } }, 800); };
+const SKETCH_KINDS = ['pen', 'line', 'arrow', 'rect', 'ellipse', 'text'];
+const colour = (v, d) => /^#[0-9a-f]{6}$/i.test(String(v || '')) ? String(v) : d;
+function cleanSketch(s, user) {
+  s = s && typeof s === 'object' ? s : {};
+  const kind = SKETCH_KINDS.includes(s.kind) ? s.kind : null; if (!kind) throw new Error('What kind of drawing?');
+  const pts = (Array.isArray(s.pts) ? s.pts : []).slice(0, 4000).filter(p => Array.isArray(p) && p.length === 2).map(p => [Math.round(num(p[0], 0, -1e6, 1e6) * 10) / 10, Math.round(num(p[1], 0, -1e6, 1e6) * 10) / 10]);
+  if (!pts.length || (kind !== 'text' && pts.length < 2)) throw new Error('Nothing drawn');
+  return { id: str(s.id, 30) || id('k'), kind, pts, color: colour(s.color, '#c0392b'), w: Math.round(num(s.w, 3, 1, 40)), fill: !!s.fill,
+    text: kind === 'text' ? str(s.text, 300) : undefined, size: kind === 'text' ? Math.round(num(s.size, 18, 8, 120)) : undefined,
+    pub: !!s.pub, by: user.name, uid: user.id, at: now() };
+}
+// to each: everything if a GM, otherwise only what's been shown
+function sketchOut(s, pubBefore) {
+  for (const c of siteConns) {
+    if (c.user.guest) continue;
+    if (isGM(c.user) || s.pub) send(c, { t: 'msketch', s });
+    else if (pubBefore) send(c, { t: 'msketchDel', ids: [s.id] });
+  }
+}
+function mapChatHello(conn) {
+  if (conn.user.guest) return;
+  send(conn, { t: 'mchat', reset: true, msgs: mapChat.chat.slice(-150) });
+  send(conn, { t: 'msketches', list: mapChat.sketches.filter(s => isGM(conn.user) || s.pub) });
+}
+function mapChatMessage(conn, msg, reply) {
+  const user = conn.user;
+  if (user.guest) throw new Error('Log in to chat');
+  if (msg.t === 'mchat') {
+    const text = str(msg.text, 600).trim(); if (!text) return reply && reply({});
+    const now2 = Date.now(); if (conn.site.lastChat && now2 - conn.site.lastChat < 300) throw new Error('Slow down a little');
+    conn.site.lastChat = now2;
+    const m = { id: id('m'), uid: user.id, by: user.name, color: user.color || '#c9a45c', gm: isGM(user), text, time: now() };
+    if (Array.isArray(msg.at) && msg.at.length === 3) m.at = [Math.round(num(msg.at[0], 0, -1e6, 1e6)), Math.round(num(msg.at[1], 0, -1e6, 1e6)), Math.round(num(msg.at[2], 3, -4, 12) * 10) / 10];
+    mapChat.chat.push(m); if (mapChat.chat.length > 300) mapChat.chat.splice(0, mapChat.chat.length - 300);
+    saveMapChat();
+    for (const c of siteConns) if (!c.user.guest) send(c, { t: 'mchat', msgs: [m] });
+    return reply && reply({});
+  }
+  if (!isGM(user)) throw new Error('Only a GM can draw on the map');
+  if (msg.t === 'msketch') {
+    const s = cleanSketch(msg.s, user);
+    const i = mapChat.sketches.findIndex(x => x.id === s.id), before = i >= 0 && mapChat.sketches[i].pub;
+    if (i >= 0) mapChat.sketches[i] = s; else { if (mapChat.sketches.length >= 3000) throw new Error('That’s a lot of drawings: clear some first'); mapChat.sketches.push(s); }
+    saveMapChat(); sketchOut(s, before);
+    return reply && reply({ id: s.id });
+  }
+  if (msg.t === 'msketchVis') {
+    const ids = new Set((Array.isArray(msg.ids) ? msg.ids : []).map(x => str(x, 30)));
+    for (const s of mapChat.sketches) if (ids.has(s.id) && s.pub !== !!msg.pub) { const b = s.pub; s.pub = !!msg.pub; sketchOut(s, b); }
+    saveMapChat();
+    return reply && reply({});
+  }
+  if (msg.t === 'msketchDel') {
+    const all = msg.all === true, ids = new Set((Array.isArray(msg.ids) ? msg.ids : []).map(x => str(x, 30)));
+    const gone = mapChat.sketches.filter(s => all || ids.has(s.id));
+    if (!gone.length) return reply && reply({});
+    mapChat.sketches = mapChat.sketches.filter(s => !gone.includes(s));
+    saveMapChat();
+    for (const c of siteConns) if (!c.user.guest) { const mine = gone.filter(s => isGM(c.user) || s.pub).map(s => s.id); if (mine.length) send(c, { t: 'msketchDel', ids: mine }); }
+    return reply && reply({ removed: gone.length });
+  }
+}
 function siteMessage(conn, msg, reply) {
   const user = conn.user;
   if (msg.t === 'site') {
+    const first = !conn.site;
     if (!conn.site) { siteConns.add(conn); conn.site = { look: null, hidden: false, leading: false }; }
     conn.site.hidden = !!msg.hidden;
     schedulePeers();
+    if (first) mapChatHello(conn);
     return reply({ id: conn.cid });
   }
   if (!conn.site) return reply({ error: 'Say hello first' });
@@ -1818,6 +1958,7 @@ function siteMessage(conn, msg, reply) {
     return;
   }
   if (msg.t === 'beckon' || msg.t === 'lead') return reply && reply({});   // (Gather and Lead are gone)
+  if (/^m(chat|sketch)/.test(msg.t)) return mapChatMessage(conn, msg, reply);
 }
 
 function onMessage(conn, raw) {
@@ -1847,7 +1988,7 @@ function onMessage(conn, raw) {
       send(conn, { t: 'time', cal: roomTime(room, isGM(user)) });
       return reply({});
     }
-    if (['site', 'look', 'beckon', 'lead', 'ping'].includes(msg.t)) return siteMessage(conn, msg, reply);
+    if (['site', 'look', 'beckon', 'lead', 'ping', 'mchat', 'msketch', 'msketchVis', 'msketchDel'].includes(msg.t)) return siteMessage(conn, msg, reply);
     const room = conn.room;
     if (!room) throw new Error('Join a campaign first');
     if (user.guest && msg.t !== 'charOpen') throw new Error('Log in to play');
@@ -1889,6 +2030,43 @@ function onMessage(conn, raw) {
           room.post(Object.assign(base, { roll: Dice.roll('3d6' + label), three: true }));
         } else room.post(Object.assign(base, { roll: Dice.roll(str(msg.formula, 200) + label) }));
         return reply({});
+      }
+      case 'statRoll': {   // the character creator's ability scores, rolled here and shown in the chat so everyone sees them
+        const how = msg.method === '4d6' ? { f: '4d6kh3', name: '4d6, drop the lowest' } : { f: '3d6+2', name: '3d6+2' };
+        const minAvg = msg.minAvg !== false && how.f === '3d6+2' || msg.minAvg === true;
+        const base = { uid: user.id, ...speaker(room, user, msg.as), color: user.color };
+        const who = str(msg.name, 80).trim();
+        let set, tries = 0;
+        do {
+          set = Array.from({ length: 6 }, () => Dice.roll(how.f + ' Ability score'));
+          tries++;
+        } while (minAvg && set.reduce((a, r) => a + r.total, 0) / 6 < 12 && tries < 50);
+        room.post(Object.assign({}, base, { kind: 'divider', text: str(`Ability scores${who ? ' for ' + who : ''} · ${how.name}`, 80) }));
+        if (tries > 1) room.post(Object.assign({}, base, { kind: 'msg', text: `Rolled ${tries} sets: ${tries - 1 === 1 ? 'the first' : 'the first ' + (tries - 1)} averaged under 12, so ${tries - 1 === 1 ? 'it was' : 'they were'} rolled again.` }));
+        for (const r of set) room.post(Object.assign({}, base, { kind: 'roll', roll: r }));
+        return reply({ scores: set.map(r => r.total), tries });
+      }
+      case 'createChar5e': {   // the character creator's finished character: a new 5e sheet filled in
+        const b = msg.char && typeof msg.char === 'object' ? msg.char : {};
+        const sheet = SHEETS[b.sheet] && /^dnd5e/.test(b.sheet) ? b.sheet : (Object.keys(SHEETS).find(k => /^dnd5e/.test(k)) || 'dnd5e');
+        const AB = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
+        const ab = {}; for (const k of AB) ab[k] = Math.round(num(b.abilities && b.abilities[k], 10, 1, 30));
+        const level = Math.round(num(b.level, 1, 1, 20)), cls = str(b.cls, 40);
+        const skills = {}; for (const k of (Array.isArray(b.skills) ? b.skills : []).slice(0, 18)) if (Sheet5e.SKILLS[k]) skills[k] = 'p';
+        for (const k of Object.keys(Sheet5e.SKILLS)) if (!skills[k]) skills[k] = '';
+        const hp = Math.round(num(b.hp, 1, 1, 999));
+        const features = (Array.isArray(b.features) ? b.features : []).slice(0, 200).map(f => ({ name: str(f && f.name, 120), desc: Sheet5e.plainText(str(f && f.text, 40000)),
+          source: f && f.kind === 'race' ? 'race' : f && f.kind === 'class' ? 'class' : 'feat' })).filter(f => f.name);
+        const model = { abilities: ab, saves: (Array.isArray(b.saves) ? b.saves : []).filter(x => AB.includes(x)), skills, hp, hpMax: hp, race: str(b.race, 60),
+          cls, level, classLevels: { [cls.toLowerCase()]: level }, background: str(b.background, 60), hitDice: level, speed: str(b.speed, 20), features };
+        const attrs = Sheet5e.fromModel(sheet, model, {});
+        const name = str(b.name, 80).trim() || 'New character';
+        attrs.character_name = name;
+        if (b.sub) attrs.subclass = str(b.sub, 80);
+        const lower = Object.fromEntries(Object.entries(attrs).map(([k, v]) => [k.toLowerCase(), v]));
+        const ch = { id: id('h'), name, sheet, owners: [user.id], shared: false, folder: null, created: now(), avatar: null, attrs: lower, recalc: Object.keys(lower) };
+        room.edit(user, { t: 'char.create', char: ch, restore: true });
+        return reply({ id: ch.id });
       }
       case 'clock': {   // the GM moves this campaign's clock on, sets the date, or the weather
         if (!isGM(user)) throw new Error('Only the GM can do that');
@@ -1945,7 +2123,7 @@ function onMessage(conn, raw) {
         const out = [];
         if (!user.guest) for (const oc of listCampaigns()) {
           if (oc.id === room.c.id || !canSee(user, oc)) continue;
-          const chars = oc.characters.filter(ch => ch.owners.includes(user.id)).map(ch => ({ id: ch.id, name: ch.name, avatar: ch.avatar, sheet: ch.sheet }));
+          const chars = oc.characters.filter(ch => ch.owners.includes(user.id)).map(ch => ({ id: ch.id, name: ch.name, avatar: ch.avatar, token: ch.token || null, sheet: ch.sheet }));
           if (chars.length) out.push({ id: oc.id, name: oc.name, chars });
         }
         out.sort((a, b) => a.name.localeCompare(b.name));
@@ -2168,6 +2346,16 @@ async function api(req, res, user, p) {
     if (b.name && isGM(user)) { const nm = str(b.name, 40).trim(); if (nm && (!userByName(nm) || userByName(nm) === user)) user.name = nm; }
     saveUsers(); return sendJSON(res, 200, { user: publicUser(user) });
   }
+  if (p === '/api/me/color' && m === 'POST') {   // the accent someone picks in the palette is their colour at the table
+    if (!user || user.guest) return sendJSON(res, 403, { error: 'Log in first' });
+    const b = await bodyJSON(req, 1000);
+    if (!/^#[0-9a-f]{6}$/i.test(b.color || '')) return sendJSON(res, 400, { error: 'Not a colour' });
+    if (user.color !== b.color.toLowerCase()) {
+      user.color = b.color.toLowerCase(); saveUsers();
+      for (const room of rooms.values()) if (room.conns.size) { for (const x of room.conns) if (x.user && x.user.id === user.id) x.user.color = user.color; room.publish(); }
+    }
+    return sendJSON(res, 200, { color: user.color });
+  }
   if (p === '/api/campaigns' && m === 'GET') {
     return sendJSON(res, 200, { campaigns: listCampaigns().filter(c => canSee(user, c)).map(c => ({ id: c.id, name: c.name, mode: c.mode, scenes: c.scenes.length, players: c.members.length })) });
   }
@@ -2264,8 +2452,11 @@ async function api(req, res, user, p) {
     if (!room || !canSee(user, room.c)) return sendJSON(res, 404, { error: 'No such campaign' });
     const what = mm[2];
     if (what === 'upload' && m === 'POST') {
-      if (!isGM(asIn(room.c, user))) return sendJSON(res, 403, { error: 'Only the GM can upload files' });
+      // pictures from anyone playing (their character's portrait and token); sound only from the GM
+      const gmUp = isGM(asIn(room.c, user)), member = gmUp || (user && !user.guest && (room.c.members || []).includes(user.id));
+      if (!member && !gmUp) return sendJSON(res, 403, { error: 'Only people in this campaign can upload pictures' });
       const type = String(req.headers['content-type'] || '').split(';')[0];
+      if (!gmUp && !/^image\/(png|jpeg|webp|gif)$/.test(type)) return sendJSON(res, 403, { error: 'Players can upload pictures (PNG, JPG, WebP or GIF); the GM adds sound' });
       const ext = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif',
         'audio/mpeg': '.mp3', 'audio/mp3': '.mp3', 'audio/ogg': '.ogg', 'audio/wav': '.wav', 'audio/x-wav': '.wav', 'audio/wave': '.wav',
         'audio/mp4': '.m4a', 'audio/x-m4a': '.m4a', 'audio/aac': '.m4a', 'audio/webm': '.webm', 'audio/flac': '.flac', 'audio/x-flac': '.flac' }[type];
@@ -2318,17 +2509,20 @@ function serveFile(req, res, file, forcedType) {
     const type = forcedType || MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
     const etag = `"${st.size.toString(36)}-${st.mtimeMs.toString(36)}"`;
     if (req.headers['if-none-match'] === etag) { res.writeHead(304); return res.end(); }
-    const longCache = /\/(tiles|icons|leaflet|vendor)\//.test(file.replace(/\\/g, '/')) || /\/assets\//.test(file.replace(/\\/g, '/'));
+    const longCache = /\/(tiles|underdark|icons|leaflet|vendor)\//.test(file.replace(/\\/g, '/')) || /\/assets\//.test(file.replace(/\\/g, '/'));
+    // map tiles are asked for with the tiling's version on the end (?v=…), so a new tiling gets new addresses: the
+    // browser can keep them a year without ever checking back
+    const forever = /\/tiles\//.test(file.replace(/\\/g, '/')) && /[?&]v=/.test(req.url || '');
     const rg = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
     if (rg && st.size > 0) {   // part of a file: audio needs this to jump about in a track
       let a = rg[1] === '' ? Math.max(0, st.size - Number(rg[2])) : Number(rg[1]), b = rg[1] !== '' && rg[2] !== '' ? Number(rg[2]) : st.size - 1;
       b = Math.min(b, st.size - 1);
       if (a > b || a >= st.size) { res.writeHead(416, { 'Content-Range': `bytes */${st.size}` }); return res.end(); }
-      res.writeHead(206, { 'Content-Type': type, 'Content-Length': b - a + 1, 'Content-Range': `bytes ${a}-${b}/${st.size}`, 'Accept-Ranges': 'bytes', ETag: etag, 'Cache-Control': longCache ? 'max-age=86400' : 'no-cache' });
+      res.writeHead(206, { 'Content-Type': type, 'Content-Length': b - a + 1, 'Content-Range': `bytes ${a}-${b}/${st.size}`, 'Accept-Ranges': 'bytes', ETag: etag, 'Cache-Control': forever ? 'public, max-age=31536000, immutable' : longCache ? 'max-age=86400' : 'no-cache' });
       if (req.method === 'HEAD') return res.end();
       return fs.createReadStream(file, { start: a, end: b }).pipe(res);
     }
-    const cache = longCache ? 'max-age=86400' : 'no-cache';
+    const cache = forever ? 'public, max-age=31536000, immutable' : longCache ? 'max-age=86400' : 'no-cache';
     if (COMPRESSIBLE.test(type) && st.size > 1400 && st.size < 32 * 1024 * 1024 && takesGzip(req)) {
       return gzFile(file, etag, (e, z) => {
         if (e) { res.writeHead(500); return res.end(); }

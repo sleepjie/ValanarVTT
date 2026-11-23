@@ -105,7 +105,7 @@ function start(cid) {
   $('#fitBtn').innerHTML = ICONS.fit; $('#fitBtn').onclick = () => V.fit();
   for (const b of V.$$('#layerDock button')) b.onclick = () => V.setLayer(b.dataset.layer);
   // the side bar's tabs are pictures; their names show when you point at them
-  const TAB_ICONS = { chat: 'conversation', init: 'crossed-swords', chars: 'book-cover', items: 'swap-bag', spells: 'spell-book', audio: 'lyre', scenes: 'treasure-map', players: 'meeple-group' };
+  const TAB_ICONS = { chat: 'conversation', init: 'crossed-swords', chars: 'book-cover', items: 'swap-bag', spells: 'spell-book', bestiary: 'dragon-head', audio: 'lyre', scenes: 'treasure-map', players: 'meeple-group' };
   const TAB_TIPS = { chat: 'Chat and dice', init: 'Initiative', chars: 'Journal: characters and handouts', items: 'Items', spells: 'Spells and features: class features, racial traits, feats, the actions in combat', audio: 'Jukebox', scenes: 'Scenes', players: 'Players' };
   for (const b of V.$$('#side .tabs button')) {
     const k = b.dataset.tab;

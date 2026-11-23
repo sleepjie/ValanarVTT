@@ -68,9 +68,9 @@ function scrollChat(force) {
 const BIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13.5h9l1-13.5"/></svg>';
 // the speaker's picture: their character's portrait, or the picture of the token they spoke as
 function speakerPic(m) {
-  if (m.pic) return m.pic;
   const camp = state.camp || {}, chars = camp.characters || [], face = ch => ch && (ch.token || ch.avatar);
-  if (m.char) { const ch = chars.find(c => c.id === m.char); if (face(ch)) return face(ch); }
+  if (m.char) { const ch = chars.find(c => c.id === m.char); if (face(ch)) return face(ch); }   // their token as it is now
+  if (m.pic) return m.pic;
   if (!m.from) return null;
   const toks = state.scene && state.scene.tokens ? [...state.scene.tokens.values()] : [];
   const t = toks.find(x => x.name === m.from && (x.img || x.sheet));

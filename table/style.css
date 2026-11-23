@@ -830,6 +830,7 @@ body.worldscene.side-closed #subtools { max-width: calc(100% - 250px); }
 .icard.feature.k-wizard, .k-wizard { --f1: #4f86d8; --f2: #142e62; --a1: #d6e6fb; --a2: #5a86c4; --g1: #bfe0ff; --g2: #2c5cb8; }
 .icard.feature.k-race, .k-race { --f1: #c99a5a; --f2: #4e3010; --a1: #f8ead2; --a2: #c49a64; --g1: #ffe0b0; --g2: #a87030; }
 .icard.feature.k-feat, .k-feat { --f1: #b08850; --f2: #3a2810; --a1: #f4e8d2; --a2: #ae8a5a; --g1: #ffe6b8; --g2: #8a6430; }
+.icard.feature.k-background, .k-background { --f1: #6f8a5a; --f2: #1f2c16; --a1: #e8f0dc; --a2: #87a06c; --g1: #e2f4cc; --g2: #4f6a38; }
 .icard.feature.k-basic, .k-basic { --f1: #8c8a80; --f2: #2a2924; --a1: #f2f1ec; --a2: #a6a498; --g1: #ffffff; --g2: #6c6a60; }
 .icard.feature.k-custom, .k-custom { --f1: #7c94a0; --f2: #1e2a30; --a1: #e4eef2; --a2: #84a0ac; --g1: #e0f6ff; --g2: #4c7484; }
 .icard.feature .ca { flex-basis: 30%; }
@@ -1155,3 +1156,138 @@ body.palopen #mapSelBar, body.artopen #mapSelBar { left: 588px; }
 .stampframes { display: flex; gap: 8px; }
 .stampfr { width: 34px; height: 34px; border-radius: 50%; border: 2px solid rgba(0,0,0,.4); cursor: pointer; background: var(--chrome-3); color: var(--text-soft); padding: 0; }
 .stampfr.on { box-shadow: 0 0 0 2px var(--gold); }
+
+/* ---------- the character creator (js/creator.js) ---------- */
+.dialog.cc { width: min(860px, 96vw); }
+.cc-body { min-height: 380px; max-height: 70vh; overflow-y: auto; }
+.cc-steps { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 16px 0; }
+.cc-step { border: 1px solid var(--chrome-line); background: none; color: inherit; border-radius: 14px; padding: 3px 10px; font-size: 12px; cursor: pointer; opacity: .65; }
+.cc-step.done { opacity: .9; }
+.cc-step.on { opacity: 1; background: var(--gold); color: #1a120a; border-color: var(--gold); font-weight: 600; }
+.cc-why { color: #e7897b; margin-left: 10px; }
+.cc-split { display: grid; grid-template-columns: minmax(160px, 220px) 1fr; gap: 14px; align-items: start; }
+@media (max-width: 640px) { .cc-split { grid-template-columns: 1fr; } }
+.cc-list { display: flex; flex-direction: column; gap: 2px; max-height: 56vh; overflow-y: auto; padding-right: 4px; }
+.cc-pick { text-align: left; border: 1px solid transparent; background: none; color: inherit; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.cc-pick:hover { background: rgba(255,255,255,.06); }
+.cc-pick.on { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 18%, transparent); }
+.cc-preview { max-height: 56vh; overflow-y: auto; }
+.cc-preview h3 { margin: 0 0 6px; }
+.cc-feat { margin: 6px 0 10px; }
+.cc-feat summary { cursor: pointer; }
+.cc-text { font-size: 13px; line-height: 1.4; }
+.cc-text p { margin: 4px 0; }
+.cc-methods { display: flex; gap: 10px; flex-wrap: wrap; }
+.cc-method { flex: 1 1 220px; display: grid; grid-template-columns: auto 1fr; column-gap: 8px; padding: 8px 10px; border: 1px solid var(--chrome-line); border-radius: 8px; cursor: pointer; }
+.cc-method input { grid-row: span 2; }
+.cc-method.on { border-color: var(--gold); }
+.cc-abil { border-collapse: collapse; margin: 8px 0; }
+.cc-abil th, .cc-abil td { padding: 4px 10px; text-align: left; }
+.cc-abil tr.cc-save th::after { content: ' ●'; color: var(--gold); font-size: 10px; }
+.cc-total { font-weight: 700; font-size: 16px; }
+.cc-mod { opacity: .75; }
+.cc-skills { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 10px; margin-bottom: 10px; }
+.cc-skill { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.cc-skill.taken { opacity: .45; }
+.cc-sum p { margin: 6px 0; }
+
+/* a character's token as their face: the whole frame shows */
+.av.tokface { background-color: transparent; background-size: contain; }
+/* the full portrait, beside a face in the journal while the pointer is over it */
+#artPeek { position: fixed; z-index: 9000; width: 240px; max-height: 320px; padding: 6px; border-radius: 8px; background: var(--chrome-1, #1b1a20); border: 1px solid var(--chrome-line, #3a3742);
+  box-shadow: 0 10px 30px rgba(0,0,0,.55); pointer-events: none; opacity: 0; transform: translateX(6px); transition: opacity .18s ease, transform .18s ease; display: flex; flex-direction: column; gap: 4px; }
+#artPeek.on { opacity: 1; transform: none; }
+#artPeek img { width: 100%; max-height: 290px; object-fit: contain; border-radius: 5px; display: block; }
+#artPeek span { font: 600 13px var(--serif); text-align: center; color: var(--text-soft); }
+/* a folder being dragged: its header is the handle */
+.cfold .cfh[draggable="true"] { cursor: grab; }
+
+/* the journal's buttons: an icon before each label; Folder runs the full width */
+#tab-chars .jhead .btn { display: inline-flex; align-items: center; gap: 7px; }
+#tab-chars .jhead .jic { width: 15px; height: 15px; flex: none; opacity: .9; }
+/* the hotbar's character name, above the bar */
+#hotbar .hbwho { position: static; padding-right: 2px; }
+#hotbar .hbtag { position: absolute; left: 12px; bottom: calc(100% + 6px); display: flex; align-items: baseline; gap: 8px; white-space: nowrap; pointer-events: none;
+  padding: 3px 10px; border-radius: 999px; background: rgba(14,12,10,.78); box-shadow: 0 1px 4px rgba(0,0,0,.4); line-height: 1.2; }
+#hotbar .hbtag b { font: 700 14px var(--serif); color: var(--text); }
+#hotbar .hbtag span { font: 12px var(--sans); color: var(--text-soft); }
+@media (max-width: 700px) { #hotbar .hbtag { display: none; } }
+
+/* journal rows: race, class and level under the name; a played character's row outlined in its player's colour */
+.crow2 { border: 1px solid transparent; }
+.crow2 .csum { display: block; font: 12px/1.25 var(--sans); color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.crow2.played { border-color: color-mix(in srgb, var(--pc) 55%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--pc) 16%, var(--chrome-2)) 0%, var(--chrome-2) 60%);
+  box-shadow: inset 3px 0 0 var(--pc), 0 0 10px -4px color-mix(in srgb, var(--pc) 70%, transparent); }
+.crow2.played:hover { border-color: var(--pc); }
+.crow2.played > .av { box-shadow: 0 0 0 2px var(--pc), 0 0 6px color-mix(in srgb, var(--pc) 60%, transparent); }
+
+/* hotbar buttons: each kind its own colour; counts sit inside the corner so nothing clips them */
+#hotbar .hb { border-color: color-mix(in srgb, var(--tc, #b0844a) 45%, #3a3226);
+  background: radial-gradient(circle at 50% 26%, color-mix(in srgb, var(--tc, #b0844a) 30%, #2e2820), #17130f 78%); }
+#hotbar .hb:hover { border-color: color-mix(in srgb, var(--tc, #b0844a) 85%, #fff);
+  background: radial-gradient(circle at 50% 26%, color-mix(in srgb, var(--tc, #b0844a) 45%, #3a3226), #1d1813 78%); }
+#hotbar .hb.on { border-color: var(--tc, var(--gold)); box-shadow: inset 0 0 0 1px var(--tc, var(--gold)), 0 0 14px color-mix(in srgb, var(--tc, var(--gold)) 55%, transparent); }
+#hotbar .hb .hbi.gi { width: 36px; height: 36px; filter: drop-shadow(0 2px 2px rgba(0,0,0,.65)); }
+#hotbar .hb[data-n]::after { top: 3px; right: 3px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
+  background: color-mix(in srgb, var(--tc, var(--gold)) 80%, #000); color: #fff; font: 700 10px/17px var(--sans);
+  box-shadow: 0 0 0 1.5px #120e09, 0 1px 3px rgba(0,0,0,.5); }
+
+/* ───── the Bestiary (GM) ───── */
+#tab-bestiary { padding: 0; }
+#tab-bestiary.on { display: flex; flex-direction: column; }
+.bshead { position: sticky; top: 0; z-index: 2; padding: 8px 8px 6px; background: var(--chrome); border-bottom: 1px solid var(--line); }
+.bshead .bsq { width: 100%; margin-bottom: 6px; }
+.bsfilters { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.bsfilters .bsf { width: 100%; min-width: 0; font-size: 12.5px; padding: 4px 6px; }
+.bsfilters .bsf:last-child { grid-column: 1 / -1; }
+.bsfilters .bsf.on { border-color: var(--gold); color: var(--fg-hi); }
+.bscount { display: flex; gap: 10px; align-items: center; margin-top: 6px; }
+.bscount .grow { flex: 1; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--gold); cursor: pointer; font: inherit; text-decoration: underline; }
+.bslist { padding: 4px 6px 12px; }
+.bsrow { display: flex; align-items: center; gap: 9px; padding: 5px 8px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+.bsrow:hover { background: var(--chrome-2); border-color: var(--line); }
+.bsrow:active { cursor: grabbing; }
+.bsrow .bsic { width: 30px; height: 30px; flex: none; filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.6)); }
+.bsrow .bsnm { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bsrow .bsnm b { font: 700 14px var(--serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bsrow .bsnm span { font-size: 12px; color: var(--text-soft); }
+.bsrow .bscr { font: 600 11.5px var(--sans); padding: 2px 7px; border-radius: 9px; background: var(--chrome-3); color: var(--text-soft); white-space: nowrap; }
+
+/* Bestiary art: a thumbnail on each row, the picture above the stat block (with its artist and licence) */
+.bsrow .bsthumb { width: 36px; height: 36px; flex: none; object-fit: cover; object-position: 50% 30%; border-radius: 5px; box-shadow: 0 0 0 1px var(--line), 0 1px 3px rgba(0,0,0,.5); background: var(--chrome-3); }
+.bsart { margin: 0 0 10px; border-radius: 6px; overflow: hidden; background: #111; box-shadow: 0 0 0 1px var(--line), 0 3px 10px rgba(0,0,0,.4); }
+.bsart a img { display: block; width: 100%; max-height: 340px; object-fit: contain; background: #0b0b0b; }
+.bsart figcaption { display: flex; align-items: center; gap: 10px; padding: 5px 9px; font-size: 11.5px; color: var(--text-soft); background: var(--chrome-2); }
+.bsart figcaption a { color: inherit; text-decoration: underline; }
+.bsart.empty { display: flex; align-items: center; gap: 10px; padding: 14px; cursor: pointer; background: transparent; border: 1.5px dashed var(--line); box-shadow: none; color: var(--text-soft); font-size: 12.5px; }
+.bsart.empty:hover, .bsart.over { border-color: var(--accent); color: var(--text); }
+.bsart.over { outline: 2px solid var(--accent); }
+.bsart .bsartic { width: 34px; height: 34px; opacity: .7; }
+.bsempty { margin: 18px 14px; }
+.bsdetail { padding: 0 8px; }
+.bsbar { display: flex; gap: 6px; align-items: center; position: sticky; top: 0; z-index: 2; background: var(--chrome); padding: 8px 0 8px; }
+.bsbar .grow { flex: 1; }
+.bsmeta { margin: 0 2px 8px; }
+.bslore { font: italic 13px/1.5 var(--serif); color: var(--text-soft); margin: 10px 2px 0; }
+/* the stat block: parchment, as in the book */
+.statblock { --sb-red: #7a200d; background: #fdf1dc; color: #1c1611; border-radius: 4px; padding: 10px 12px 12px; box-shadow: 0 0 0 1px #c9ad6a, 0 3px 10px rgba(0,0,0,.45);
+  font: 13px/1.42 'Segoe UI', system-ui, sans-serif; background-image: linear-gradient(#fdf1dc, #f6e6c7); }
+.statblock h3 { margin: 0; font: 700 21px/1.15 'Linux Libertine', Georgia, serif; color: var(--sb-red); font-variant: small-caps; letter-spacing: .02em; }
+.statblock .bstype { font-style: italic; margin-bottom: 4px; }
+.statblock hr { border: 0; height: 2px; margin: 6px 0; background: linear-gradient(90deg, var(--sb-red), rgba(122,32,13,.15)); }
+.statblock .bscombat { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; }
+.statblock .bscombat .bsspeed { grid-column: 1 / -1; }
+.statblock b { color: var(--sb-red); }
+.statblock .bsab { width: 100%; border-collapse: collapse; margin: 4px 0 2px; text-align: center; }
+.statblock .bsab th { color: var(--sb-red); font-size: 11.5px; letter-spacing: .05em; padding: 2px 0; }
+.statblock .bsab td { padding: 1px 0; font-size: 12.5px; }
+.statblock .bsab td.bssave { font-size: 11.5px; }
+.statblock .bsline { margin: 1px 0; }
+.statblock h4 { margin: 10px 0 4px; font: 600 16px 'Linux Libertine', Georgia, serif; color: var(--sb-red); font-variant: small-caps; border-bottom: 1px solid var(--sb-red); }
+.statblock p { margin: 0 0 6px; }
+.statblock .bsan { font-style: italic; }
+.statblock .bsintro { font-style: italic; }
+.statblock .bsdice { background: none; border: 0; padding: 0 1px; margin: 0; font: inherit; color: #1c4f8a; cursor: pointer; border-bottom: 1px dotted #1c4f8a; border-radius: 2px; }
+.statblock .bsdice:hover { background: rgba(28,79,138,.12); }

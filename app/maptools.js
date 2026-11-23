@@ -93,7 +93,8 @@ window.ValanarMapTools = function (ctx) {
   map.createPane('routes').style.zIndex = 390;
   const routeLayer = L.layerGroup().addTo(map);
   const handleLayer = L.layerGroup().addTo(map);
-  let selRoute = null, selLabel = null, mode = null, draft = null;   // mode: 'route' (drawing), 'plot' (two clicks), 'label' (placing)
+  let selRoute = null, selLabel = null, mode = null, draft = null;
+  const selSet = new Set();   // names picked together with Ctrl+click (selLabel is the one whose points show)   // mode: 'route' (drawing), 'plot' (two clicks), 'label' (placing)
 
   function drawRoutes() {
     routeLayer.clearLayers();
@@ -104,8 +105,11 @@ window.ValanarMapTools = function (ctx) {
       const k = kindOf(r), ll = routePath(r).map(p => toLatLng(p[0], p[1]));
       const w = num(r.width, k.width), col = r.color || k.color, dash = DASH[r.dash || k.dash];
       const sel = selRoute === r.id && ctx.editMode();
-      routeLayer.addLayer(L.polyline(ll, { pane: 'routes', interactive: false, color: '#10181a', opacity: sel ? 0.6 : 0.32, weight: w + 3, lineCap: 'round', lineJoin: 'round' }));
-      routeLayer.addLayer(L.polyline(ll, { pane: 'routes', interactive: false, color: sel ? '#ffd27a' : col, opacity: 0.95, weight: w, dashArray: dash, lineCap: 'round', lineJoin: 'round' }));
+      const op = routeOpacity(r, sel);   // a route can be see-through, or invisible (then only its name and its clicks show)
+      if (op > 0) {
+        routeLayer.addLayer(L.polyline(ll, { pane: 'routes', interactive: false, color: '#10181a', opacity: (sel ? 0.6 : 0.32) * op, weight: w + 3, lineCap: 'round', lineJoin: 'round' }));
+        routeLayer.addLayer(L.polyline(ll, { pane: 'routes', interactive: false, color: sel ? '#ffd27a' : col, opacity: 0.95 * op, weight: w, dashArray: dash, lineCap: 'round', lineJoin: 'round' }));
+      }
       // a wide, invisible line to click
       const hit = L.polyline(ll, { pane: 'routes', color: '#000', opacity: 0, weight: Math.max(14, w + 10), interactive: true, bubblingMouseEvents: false });
       hit.on('click', e => { L.DomEvent.stop(e); if (mode) mapClick(e.latlng); else routeClick(r, e.latlng); });
@@ -157,14 +161,18 @@ window.ValanarMapTools = function (ctx) {
   }
   // mid-drag: redraw the lines without rebuilding the handles being dragged
   let liveT = 0;
+  // how solid a route's line is (r.opacity, 0 = invisible); the one being edited never fades below half, so it can be found
+  function routeOpacity(r, sel) { const o = r.opacity == null ? 1 : clamp(+r.opacity, 0, 1); return sel ? Math.max(o, 0.5) : o; }
   function drawRouteLive() { if (!liveT) liveT = requestAnimationFrame(() => { liveT = 0; drawRouteLines(); drawNames(); }); }
   function drawRouteLines() {
     routeLayer.clearLayers();
     for (const r of routes()) {
       if (!r.pts || r.pts.length < 2) continue;
       const k = kindOf(r), ll = routePath(r).map(p => toLatLng(p[0], p[1])), w = num(r.width, k.width), sel = selRoute === r.id;
-      routeLayer.addLayer(L.polyline(ll, { pane: 'routes', interactive: false, color: '#10181a', opacity: 0.5, weight: w + 3 }));
-      routeLayer.addLayer(L.polyline(ll, { pane: 'routes', interactive: false, color: sel ? '#ffd27a' : (r.color || k.color), weight: w, dashArray: DASH[r.dash || k.dash] }));
+      const op = routeOpacity(r, sel);
+      if (op <= 0) continue;
+      routeLayer.addLayer(L.polyline(ll, { pane: 'routes', interactive: false, color: '#10181a', opacity: 0.5 * op, weight: w + 3 }));
+      routeLayer.addLayer(L.polyline(ll, { pane: 'routes', interactive: false, color: sel ? '#ffd27a' : (r.color || k.color), opacity: op, weight: w, dashArray: DASH[r.dash || k.dash] }));
     }
   }
 
@@ -271,8 +279,17 @@ window.ValanarMapTools = function (ctx) {
     other: { label: 'Other', size: 200, spacing: 0.2, caps: false, italic: true, color: '#2a2418', opacity: 0.8, zoom: [-9, NATIVE + 1] }
   };
   const labels = () => D().labels || (D().labels = []);
-  const lkind = lb => LKINDS[lb.kind] || LKINDS.other;
-  const lval = (lb, k) => (lb[k] === undefined || lb[k] === null || lb[k] === '' ? lkind(lb)[k] : lb[k]);
+  // each kind's defaults: the built-in ones, under the map's own (Names › Defaults for each kind, data.settings.nameKinds)
+  const kindKey = lb => (LKINDS[lb.kind] ? lb.kind : 'other');
+  const kindOver = () => (D().settings && D().settings.nameKinds) || {};
+  let kindPreview = null;   // { kind, key, val } while a defaults slider is moving
+  const nameKind = k => { const o = Object.assign({}, LKINDS[k] || LKINDS.other, kindOver()[k] || {}); if (kindPreview && kindPreview.kind === k) o[kindPreview.key] = kindPreview.val; return o; };
+  const lkind = lb => nameKind(kindKey(lb));
+  const lval = (lb, k) => {
+    if (kindPreview && kindPreview.kind === kindKey(lb) && kindPreview.key === k) return kindPreview.val;
+    return lb[k] === undefined || lb[k] === null || lb[k] === '' ? lkind(lb)[k] : lb[k];
+  };
+  const picked = id => selLabel === id || selSet.has(id);
   map.createPane('names').style.zIndex = 395;
   const namesPane = map.getPane('names');
   const SVGNS = 'http://www.w3.org/2000/svg';
@@ -341,11 +358,11 @@ window.ValanarMapTools = function (ctx) {
       const size = num(lval(lb, 'size'), 200) * k * clamp(num(lk.labels.size, 1), 0.5, 2.5);
       const zr = [num(lb.minZoom, lkind(lb).zoom[0]), num(lb.maxZoom, lkind(lb).zoom[1])];
       const visible = size >= 7 && size <= 130 && z >= zr[0] && z <= zr[1];   // too small or too big to read: not shown
-      if (!visible && !(editing && selLabel === lb.id)) continue;
+      if (!visible && !(editing && picked(lb.id))) continue;
       const t = put(lb.pts, lb.text, { size: clamp(size, 7, 130), spacing: num(lval(lb, 'spacing'), 0.2), italic: !!lval(lb, 'italic'), caps: !!lval(lb, 'caps'),
-        color: lval(lb, 'color'), opacity: num(lval(lb, 'opacity'), 0.8) * (visible ? 1 : 0.4), halo: lb.halo === false || look().labels.halo === false ? null : '#f2ecd9', haloOpacity: 0.35, weight: lb.kind === 'ocean' || lb.kind === 'sea' ? 500 : 600,
-        cls: (editing ? 'edit' : '') + (selLabel === lb.id && editing ? ' sel' : '') });
-      if (t && editing) t.addEventListener('click', e => { e.stopPropagation(); if (mode) return mapClick(map.mouseEventToLatLng(e)); selLabel = lb.id; selRoute = null; ctx.openPanel('names', true); drawRoutes(); });
+        color: lval(lb, 'color'), opacity: num(lval(lb, 'opacity'), 0.8) * (visible ? 1 : 0.4), halo: lval(lb, 'halo') === false || look().labels.halo === false ? null : '#f2ecd9', haloOpacity: 0.35, weight: lb.kind === 'ocean' || lb.kind === 'sea' ? 500 : 600,
+        cls: (editing ? 'edit' : '') + (picked(lb.id) && editing ? ' sel' : '') });
+      if (t && editing) t.addEventListener('click', e => { e.stopPropagation(); if (mode) return mapClick(map.mouseEventToLatLng(e)); pickName(lb.id, e.ctrlKey || e.metaKey); selRoute = null; ctx.openPanel('names', true); ctx.renderPanel(); drawRoutes(); });
     }
     // routes' names along their lines
     for (const r of routes()) {
@@ -399,7 +416,7 @@ window.ValanarMapTools = function (ctx) {
       return;
     }
     if (mode === 'label') {
-      const kind = draft.kind || 'sea', K = LKINDS[kind] || LKINDS.other;
+      const kind = draft.kind || 'sea', K = nameKind(kind);
       const half = K.size * Math.max(2.2, 10 * (0.62 + K.spacing) * 0.6);   // about as wide as a ten-letter name
       const lb = { id: uid('w'), text: draft.text || 'New name', kind, pts: [[pt[0] - half, pt[1] + half * 0.08], [pt[0], pt[1] - half * 0.06], [pt[0] + half, pt[1] + half * 0.08]].map(q => q.map(Math.round)) };
       setMode(null);
@@ -429,6 +446,17 @@ window.ValanarMapTools = function (ctx) {
   // ───────────────────────── panels ─────────────────────────
   const setR = (r, fn, opts) => ctx.change(() => { const t = routes().find(x => x.id === r.id); if (t) fn(t); }, opts || { panel: false });
   const setL = (lb, fn, opts) => ctx.change(() => { const t = labels().find(x => x.id === lb.id); if (t) fn(t); }, opts || { panel: false });
+  // Ctrl+click adds a name to the picked ones, or takes it out; a plain click picks just that one
+  function pickName(id, add) {
+    if (!add) { selSet.clear(); selLabel = id; return; }
+    if (selLabel && !selSet.size) selSet.add(selLabel);
+    if (selSet.has(id)) { selSet.delete(id); selLabel = selSet.size ? [...selSet][selSet.size - 1] : null; if (selSet.size === 1) selSet.clear(); }
+    else { selSet.add(id); selLabel = id; }
+  }
+  const group = () => (selSet.size > 1 ? labels().filter(x => selSet.has(x.id)) : null);
+  const setG = (fn, opts) => ctx.change(() => { for (const t of labels()) if (selSet.has(t.id)) fn(t); }, opts || { panel: false });
+  // a new kind keeps the name's size; its other looks follow the new kind
+  const changeKind = (t, v) => { const size = num(lval(t, 'size'), 200); t.kind = v; for (const key of ['spacing', 'color', 'opacity', 'caps', 'italic', 'halo', 'minZoom', 'maxZoom']) delete t[key]; t.size = size; };
   // a name's size: a slider even across the range (5 to 2400 map pixels) beside a box for an exact number
   const SIZE_MIN = 5, SIZE_MAX = 2400;
   const sizeToPos = v => Math.round(1000 * Math.log(clamp(v, SIZE_MIN, SIZE_MAX) / SIZE_MIN) / Math.log(SIZE_MAX / SIZE_MIN));
@@ -467,6 +495,10 @@ window.ValanarMapTools = function (ctx) {
           h('div', null, h('label', null, 'Colour'), h('input', { type: 'color', value: r.color || k.color, onchange: e => setR(r, t => { t.color = e.target.value; }) })),
           h('div', null, h('label', null, 'Width'), h('input', { type: 'number', min: 1, max: 8, step: 0.5, value: num(r.width, k.width), onchange: e => setR(r, t => { t.width = +e.target.value; }) })),
           h('div', null, h('label', null, 'Shows from zoom'), h('input', { type: 'number', step: 0.25, value: r.minZoom ?? '', placeholder: 'always', onchange: e => setR(r, t => { if (e.target.value === '') delete t.minZoom; else t.minZoom = +e.target.value; }) }))),
+        h('label', null, 'Line opacity ', h('span', { class: 'small muted', id: 'rtOpv' }, Math.round((r.opacity ?? 1) * 100) + '%' + ((r.opacity ?? 1) === 0 ? ' (hidden: only its name and clicks show)' : ''))),
+        h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: r.opacity ?? 1, title: 'Fade the line to see the road drawn on the map underneath; at 0 the line is hidden but the route still measures, names and clicks',
+          oninput: e => { r.opacity = +e.target.value; const v = document.getElementById('rtOpv'); if (v) v.textContent = Math.round(r.opacity * 100) + '%'; drawRoutes(); },
+          onchange: e => setR(r, t => { const v = +e.target.value; if (v >= 1) delete t.opacity; else t.opacity = v; }) }),
         h('label', { class: 'inline' }, h('input', { type: 'checkbox', checked: r.showName !== false || null, onchange: e => setR(r, t => { t.showName = e.target.checked; }) }), 'Name along the line'),
         h('label', { class: 'inline', style: 'margin-left:12px' }, h('input', { type: 'checkbox', checked: r.smooth !== false || null, onchange: e => setR(r, t => { t.smooth = e.target.checked; }) }), 'Smooth curve'),
         h('label', null, 'Notes (shown when it’s clicked)'), h('textarea', { rows: 3, value: r.notes || '', onchange: e => setR(r, t => { t.notes = e.target.value; }) }, r.notes || ''),
@@ -486,6 +518,90 @@ window.ValanarMapTools = function (ctx) {
     return ctx.panelShell('Routes', h('div', { class: 'form' }, ...body));
   }
 
+  // Defaults for each kind: a change here is the kind's new default and applies to every name of that kind,
+  // clearing what those names had set for it themselves, so they all match
+  let editKind = 'sea';
+  function kindDefaults() {
+    const k = editKind, K = nameKind(k), mine = kindOver()[k] || {}, n = labels().filter(t => kindKey(t) === k).length;
+    const setK = (key, val) => ctx.change(() => {
+      const st = D().settings || (D().settings = {}); const all = st.nameKinds || (st.nameKinds = {}); const o = all[k] || (all[k] = {});
+      if (key === 'minZoom' || key === 'maxZoom') { const z = (o.zoom || LKINDS[k].zoom).slice(); z[key === 'minZoom' ? 0 : 1] = val; o.zoom = z; }
+      else o[key] = val;
+      for (const t of labels()) if (kindKey(t) === k) delete t[key];
+    }, {});
+    const live = (key, val) => { kindPreview = { kind: k, key, val }; drawNames(); };
+    const done = (key, val) => { kindPreview = null; setK(key, val); };
+    const size = num(K.size, 200);
+    const box = h('input', { type: 'number', min: 1, max: 5000, step: 0.5, value: size, style: 'width:80px', onchange: e => setK('size', clamp(+e.target.value || size, 1, 5000)) });
+    const tick = (key, label) => h('label', { class: 'inline', style: 'margin-right:12px' }, h('input', { type: 'checkbox', checked: (key === 'halo' ? K.halo !== false : !!K[key]) || null, onchange: e => setK(key, e.target.checked) }), label);
+    const changed = Object.keys(mine).length > 0;
+    const det = h('details', { class: 'nkinds', open: kindsOpen || null, ontoggle: e => { kindsOpen = e.target.open; } },
+      h('summary', null, 'Defaults for each kind'),
+      h('div', { class: 'row' },
+        h('div', null, h('label', null, 'Kind'), h('select', { onchange: e => { editKind = e.target.value; ctx.renderPanel(); } }, ...Object.entries(LKINDS).map(([kk, v]) => h('option', { value: kk, selected: kk === k || null }, v.label + (kindOver()[kk] ? ' •' : ''))))),
+        h('div', null, h('label', null, 'Colour'), h('input', { type: 'color', value: K.color, onchange: e => setK('color', e.target.value) }))),
+      h('p', { class: 'small muted' }, n ? `Changes here apply to all ${n} name${n === 1 ? '' : 's'} of this kind, replacing what they had set for that themselves.` : 'No names of this kind yet; new ones will start like this.'),
+      h('label', null, 'Size (map pixels)'),
+      h('div', { class: 'row', style: 'align-items:center;gap:8px' }, h('div', { style: 'flex:1' }, h('input', { type: 'range', min: 0, max: 1000, step: 1, value: sizeToPos(size),
+        oninput: e => { const v = posToSize(+e.target.value); box.value = v; live('size', v); }, onchange: e => done('size', posToSize(+e.target.value)) })), box),
+      h('label', null, 'Letter spacing'),
+      h('input', { type: 'range', min: 0, max: 1.5, step: 0.02, value: num(K.spacing, 0.2), oninput: e => live('spacing', +e.target.value), onchange: e => done('spacing', +e.target.value) }),
+      h('label', null, 'Strength'),
+      h('input', { type: 'range', min: 0.2, max: 1, step: 0.05, value: num(K.opacity, 0.8), oninput: e => live('opacity', +e.target.value), onchange: e => done('opacity', +e.target.value) }),
+      h('div', null, tick('caps', 'Capitals'), tick('italic', 'Italic'), tick('halo', 'Soft halo')),
+      h('div', { class: 'row' },
+        h('div', null, h('label', null, 'Shows from zoom'), h('input', { type: 'number', step: 0.25, value: Math.max(0, K.zoom[0]), onchange: e => setK('minZoom', e.target.value === '' ? LKINDS[k].zoom[0] : +e.target.value) })),
+        h('div', null, h('label', null, 'Hides after zoom'), h('input', { type: 'number', step: 0.25, value: K.zoom[1], onchange: e => setK('maxZoom', e.target.value === '' ? LKINDS[k].zoom[1] : +e.target.value) }))),
+      changed ? h('div', { class: 'btnrow' }, h('button', { class: 'btn sm', title: 'The kind goes back to how it started; names keep their current look until you change the defaults again', onclick: () => ctx.change(() => {
+        // the names keep looking as they do now: what they took from the kind becomes their own
+        for (const t of labels()) if (kindKey(t) === k) for (const key of Object.keys(mine)) {
+          if (key === 'zoom') { if (t.minZoom == null) t.minZoom = mine.zoom[0]; if (t.maxZoom == null) t.maxZoom = mine.zoom[1]; }
+          else if (t[key] === undefined) t[key] = mine[key];
+        }
+        delete D().settings.nameKinds[k];
+      }) }, 'Back to the built-in defaults')) : null);
+    return det;
+  }
+  let kindsOpen = false;
+
+  // several names picked with Ctrl+click: set any of their looks at once
+  function groupControls(G) {
+    const same = f => { const v = G.map(f); return v.every(x => x === v[0]) ? v[0] : undefined; };
+    const kind = same(kindKey), color = same(t => lval(t, 'color')), size = same(t => num(lval(t, 'size'), 200));
+    const spacing = same(t => num(lval(t, 'spacing'), 0.2)), opacity = same(t => num(lval(t, 'opacity'), 0.8));
+    const tri = (key, label, get) => {
+      const v = same(get);
+      const cb = h('input', { type: 'checkbox', checked: v === true || null, onchange: e => setG(t => { t[key] = e.target.checked; }) });
+      if (v === undefined) cb.indeterminate = true;
+      return h('label', { class: 'inline', style: 'margin-right:12px' }, cb, label);
+    };
+    const box = h('input', { type: 'number', min: 1, max: 5000, step: 0.5, value: size ?? '', placeholder: 'mixed', style: 'width:80px', onchange: e => { if (e.target.value !== '') setG(t => { t.size = clamp(+e.target.value, 1, 5000); }); } });
+    const zmin = same(t => t.minZoom ?? null), zmax = same(t => t.maxZoom ?? null);
+    return [h('h2', null, `${G.length} names picked`),
+      h('p', { class: 'small muted' }, G.map(t => t.text).join(', ')),
+      h('div', { class: 'row' },
+        h('div', null, h('label', null, 'Kind'), h('select', { onchange: e => { if (e.target.value) setG(t => changeKind(t, e.target.value), {}); } },
+          kind === undefined ? h('option', { value: '', selected: true }, '— mixed —') : null,
+          ...Object.entries(LKINDS).map(([k, v]) => h('option', { value: k, selected: k === kind || null }, v.label)))),
+        h('div', null, h('label', null, 'Colour'), h('input', { type: 'color', value: color || '#2a2418', onchange: e => setG(t => { t.color = e.target.value; }) }))),
+      h('label', null, 'Size (map pixels)' + (size === undefined ? ' · mixed' : '')),
+      h('div', { class: 'row', style: 'align-items:center;gap:8px' }, h('div', { style: 'flex:1' }, h('input', { type: 'range', min: 0, max: 1000, step: 1, value: sizeToPos(size ?? 200),
+        oninput: e => { const v = posToSize(+e.target.value); box.value = v; for (const t of G) t.size = v; drawNames(); }, onchange: e => { const v = posToSize(+e.target.value); setG(t => { t.size = v; }); } })), box),
+      h('label', null, 'Letter spacing' + (spacing === undefined ? ' · mixed' : '')),
+      h('input', { type: 'range', min: 0, max: 1.5, step: 0.02, value: spacing ?? 0.2, oninput: e => { for (const t of G) t.spacing = +e.target.value; drawNames(); }, onchange: e => setG(t => { t.spacing = +e.target.value; }) }),
+      h('label', null, 'Strength' + (opacity === undefined ? ' · mixed' : '')),
+      h('input', { type: 'range', min: 0.2, max: 1, step: 0.05, value: opacity ?? 0.8, oninput: e => { for (const t of G) t.opacity = +e.target.value; drawNames(); }, onchange: e => setG(t => { t.opacity = +e.target.value; }) }),
+      h('div', null, tri('caps', 'Capitals', t => !!lval(t, 'caps')), tri('italic', 'Italic', t => !!lval(t, 'italic')), tri('halo', 'Soft halo', t => lval(t, 'halo') !== false)),
+      h('div', { class: 'row' },
+        h('div', null, h('label', null, 'Shows from zoom'), h('input', { type: 'number', step: 0.25, value: zmin ?? '', placeholder: zmin === undefined ? 'mixed' : 'kind’s', onchange: e => setG(t => { if (e.target.value === '') delete t.minZoom; else t.minZoom = +e.target.value; }) })),
+        h('div', null, h('label', null, 'Hides after zoom'), h('input', { type: 'number', step: 0.25, value: zmax ?? '', placeholder: zmax === undefined ? 'mixed' : 'kind’s', onchange: e => setG(t => { if (e.target.value === '') delete t.maxZoom; else t.maxZoom = +e.target.value; }) }))),
+      h('div', { class: 'btnrow' },
+        h('button', { class: 'btn', title: 'Clear what these names set themselves, so they follow their kind’s defaults', onclick: () => setG(t => { for (const key of ['size', 'spacing', 'color', 'opacity', 'caps', 'italic', 'halo', 'minZoom', 'maxZoom']) delete t[key]; }, {}) }, 'Use their kinds’ defaults'),
+        h('button', { class: 'btn', onclick: () => { selSet.clear(); ctx.renderPanel(); drawRoutes(); drawNames(); } }, 'Pick just one'),
+        h('button', { class: 'btn danger', onclick: () => { const ids = new Set(selSet); ctx.change(() => { D().labels = labels().filter(x => !ids.has(x.id)); }); selSet.clear(); selLabel = null; drawRoutes(); } }, `Delete ${G.length}`)),
+      h('p', { class: 'small muted' }, 'Ctrl+click a name to add it or take it out.')];
+  }
+
   function namesPanel() {
     const lb = selLabel && labels().find(x => x.id === selLabel);
     let newKind = 'sea';
@@ -496,12 +612,15 @@ window.ValanarMapTools = function (ctx) {
         h('button', { class: 'btn primary' + (mode === 'label' ? ' on' : ''), onclick: () => setMode(mode === 'label' ? null : 'label', { kind: newKind }) }, mode === 'label' ? 'Click where it goes… (Esc)' : 'Add a name'),
         kinds(newKind, v => { newKind = v; if (mode === 'label') draft.kind = v; }))
     ];
-    if (lb) {
+    body.push(kindDefaults());
+    const G = group();
+    if (G) body.push(...groupControls(G));
+    else if (lb) {
       const K = lkind(lb);
       body.push(h('h2', null, 'This name'),
         h('label', null, 'Name'), h('input', { id: 'lbText', type: 'text', value: lb.text, onchange: e => { setL(lb, t => { t.text = e.target.value.trim() || t.text; }); const row = document.querySelector(`[data-lid="${lb.id}"] .rnm`); if (row) row.textContent = e.target.value.trim(); } }),
         h('div', { class: 'row' },
-          h('div', null, h('label', null, 'Kind'), kinds(lb.kind, v => setL(lb, t => { t.kind = v; for (const key of ['size', 'spacing', 'color', 'opacity', 'caps', 'italic', 'minZoom', 'maxZoom']) delete t[key]; }, {}))),
+          h('div', null, h('label', null, 'Kind'), kinds(lb.kind, v => setL(lb, t => changeKind(t, v), {}))),
           h('div', null, h('label', null, 'Colour'), h('input', { type: 'color', value: lval(lb, 'color'), onchange: e => setL(lb, t => { t.color = e.target.value; }) }))),
         ...sizeControls(lb),
         h('label', null, 'Letter spacing'),
@@ -511,7 +630,7 @@ window.ValanarMapTools = function (ctx) {
         h('div', null,
           h('label', { class: 'inline' }, h('input', { type: 'checkbox', checked: !!lval(lb, 'caps') || null, onchange: e => setL(lb, t => { t.caps = e.target.checked; }) }), 'Capitals'),
           h('label', { class: 'inline', style: 'margin-left:12px' }, h('input', { type: 'checkbox', checked: !!lval(lb, 'italic') || null, onchange: e => setL(lb, t => { t.italic = e.target.checked; }) }), 'Italic'),
-          h('label', { class: 'inline', style: 'margin-left:12px' }, h('input', { type: 'checkbox', checked: lb.halo !== false || null, onchange: e => setL(lb, t => { t.halo = e.target.checked; }) }), 'Soft halo')),
+          h('label', { class: 'inline', style: 'margin-left:12px' }, h('input', { type: 'checkbox', checked: lval(lb, 'halo') !== false || null, onchange: e => setL(lb, t => { t.halo = e.target.checked; }) }), 'Soft halo')),
         h('div', { class: 'row' },
           h('div', null, h('label', null, 'Shows from zoom'), h('input', { type: 'number', step: 0.25, value: lb.minZoom ?? '', placeholder: String(Math.max(0, K.zoom[0])), onchange: e => setL(lb, t => { if (e.target.value === '') delete t.minZoom; else t.minZoom = +e.target.value; }) })),
           h('div', null, h('label', null, 'Hides after zoom'), h('input', { type: 'number', step: 0.25, value: lb.maxZoom ?? '', placeholder: String(K.zoom[1]), onchange: e => setL(lb, t => { if (e.target.value === '') delete t.maxZoom; else t.maxZoom = +e.target.value; }) }))),
@@ -519,11 +638,12 @@ window.ValanarMapTools = function (ctx) {
         h('div', { class: 'btnrow' },
           h('button', { class: 'btn', onclick: () => setL(lb, t => { t.pts.reverse(); }) }, 'Flip the curve'),
           h('button', { class: 'btn', onclick: () => setL(lb, t => { const a = t.pts[0], b = t.pts[t.pts.length - 1]; t.pts = t.pts.map((p, i, arr) => { const f = i / (arr.length - 1); return [Math.round(a[0] + (b[0] - a[0]) * f), Math.round(a[1] + (b[1] - a[1]) * f)]; }); }) }, 'Straighten'),
-          h('button', { class: 'btn danger', onclick: () => { ctx.change(() => { D().labels = labels().filter(x => x.id !== lb.id); }); selLabel = null; drawRoutes(); } }, 'Delete')));
+          h('button', { class: 'btn danger', onclick: () => { ctx.change(() => { D().labels = labels().filter(x => x.id !== lb.id); }); selLabel = null; drawRoutes(); } }, 'Delete')),
+        h('p', { class: 'small muted' }, 'Ctrl+click other names, on the map or in the list, to change several at once.'));
     }
     body.push(h('h2', null, `Names · ${labels().length}`),
-      labels().length ? h('div', { class: 'nlist' }, ...labels().slice().sort((a, b) => num(lval(b, 'size'), 0) - num(lval(a, 'size'), 0)).map(x => h('div', { class: 'nrow' + (x.id === selLabel ? ' on' : ''), style: 'cursor:pointer', 'data-lid': x.id,
-        onclick: () => { selLabel = x.id; selRoute = null; ctx.renderPanel(); drawRoutes(); const c = x.pts[Math.floor(x.pts.length / 2)]; map.setView(toLatLng(c[0], c[1]), clamp(Math.max(lkind(x).zoom[0], map.getZoom()), map.getMinZoom(), lkind(x).zoom[1])); } },
+      labels().length ? h('div', { class: 'nlist' }, ...labels().slice().sort((a, b) => num(lval(b, 'size'), 0) - num(lval(a, 'size'), 0)).map(x => h('div', { class: 'nrow' + (picked(x.id) ? ' on' : ''), style: 'cursor:pointer', 'data-lid': x.id,
+        onclick: e => { if (e.ctrlKey || e.metaKey) { pickName(x.id, true); selRoute = null; ctx.renderPanel(); drawRoutes(); return; } pickName(x.id, false); selRoute = null; ctx.renderPanel(); drawRoutes(); const c = x.pts[Math.floor(x.pts.length / 2)]; map.setView(toLatLng(c[0], c[1]), clamp(Math.max(lkind(x).zoom[0], map.getZoom()), map.getMinZoom(), lkind(x).zoom[1])); } },
         h('span', { class: 'rnm', style: 'flex:1;font-style:italic' }, x.text), h('span', { class: 'cnt' }, lkind(x).label)))) : h('p', { class: 'small muted' }, 'No names yet.'));
     return ctx.panelShell('Names on the map', h('div', { class: 'form' }, ...body));
   }
@@ -600,12 +720,14 @@ window.ValanarMapTools = function (ctx) {
   function sync() {
     if (selRoute && !routes().some(r => r.id === selRoute)) selRoute = null;
     if (selLabel && !labels().some(l => l.id === selLabel)) selLabel = null;
+    for (const id of [...selSet]) if (!labels().some(l => l.id === id)) selSet.delete(id);
+    if (selSet.size === 1) selSet.clear();
     seaGrid = Land.ready ? seaGrid : null;
     drawRoutes();
   }
-  function panelClosed() { selRoute = selLabel = null; if (mode) setMode(null); drawRoutes(); }
+  function panelClosed() { selRoute = selLabel = null; selSet.clear(); kindPreview = null; if (mode) setMode(null); drawRoutes(); }
 
   applyLook();
   drawRoutes();
-  return { seaPath: (a, b) => plotSea(a, b, true), sync, applyLook, panel, busy, look, clickAt: (ll, place) => mapClick(ll, place), distText, unit, panelClosed, landChanged: () => { seaGrid = null; } };
+  return { seaPath: (a, b) => plotSea(a, b, true), selectName: id => { selSet.clear(); selLabel = id; selRoute = null; ctx.openPanel('names', true); drawRoutes(); drawNames(); }, sync, applyLook, panel, busy, look, clickAt: (ll, place) => mapClick(ll, place), distText, unit, panelClosed, landChanged: () => { seaGrid = null; } };
 };

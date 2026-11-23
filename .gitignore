@@ -1,6 +1,7 @@
 vtt-data/
 vtt-data-before-*/
 node_modules/
+!server/node_modules/
 site.tgz
 patch.tgz
 patch.list

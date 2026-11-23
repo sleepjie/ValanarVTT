@@ -47,7 +47,11 @@
     s.setProperty('--gold', c); s.setProperty('--gold-dark', mix(c, '#000000', 0.25)); s.setProperty('--gold-light', mix(c, '#ffffff', 0.4));
     return c;
   }
-  function set(c) { store(KEY, c, DEF); apply(c || DEF); }
+  function set(c) {
+    store(KEY, c, DEF); const shown = apply(c || DEF);
+    // the accent you pick is also your colour at the table: your token highlight, chat, pings and rulers
+    try { fetch('/api/me/color', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ color: shown }) }).catch(() => {}); } catch (e) { /* offline */ }
+  }
   function setBase(id) { store(BKEY, id, BDEF); applyBase(id); apply(get()); }
   applyBase(getBase()); apply(get());
   window.addEventListener('storage', e => { if (e.key === KEY || e.key === BKEY) { applyBase(getBase()); apply(get()); } });   // another tab changed it

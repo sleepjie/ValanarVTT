@@ -254,9 +254,25 @@ const SmoothTiles = L.TileLayer.extend({
     if (more) { L.Util.cancelAnimFrame(this._fadeFrame); this._fadeFrame = L.Util.requestAnimFrame(this._updateOpacity, this); }
   }
 });
+// A backdrop under the map: the whole map at a coarse level (a hundred-odd small tiles, all fetched at the start and
+// kept), so wherever you fling the view there's already a soft copy of the right map under the sharp tiles while they
+// arrive, never an empty gap.
+const BACK_Z = Math.max(0, NATIVE - 3);
+const backdrop = L.tileLayer(TILE_URL, {
+  tileSize: TILE, bounds, noWrap: true, minZoom: 0, maxZoom: NATIVE + 1, minNativeZoom: BACK_Z, maxNativeZoom: BACK_Z,
+  keepBuffer: 64, updateWhenZooming: false, className: 'tiles-backdrop'
+}).setZIndex(0).addTo(map);
+{
+  const n = Math.ceil(INFO.width / Math.pow(2, NATIVE - BACK_Z) / TILE), m = Math.ceil(INFO.height / Math.pow(2, NATIVE - BACK_Z) / TILE);
+  const keep = [];   // held, so the browser keeps them decoded in memory as well as on disk
+  const warmAll = () => { for (let y = 0; y < m; y++) for (let x = 0; x < n; x++) { const im = new Image(); im.decoding = 'async'; im.src = TILE_URL.replace('{z}', BACK_Z).replace('{y}', y).replace('{x}', x); keep.push(im); } };
+  (window.requestIdleCallback || (f => setTimeout(f, 1500)))(warmAll, { timeout: 3000 });
+}
 const tileLayer = new SmoothTiles(TILE_URL, {
-  tileSize: TILE, bounds, noWrap: true, minZoom: 0, maxNativeZoom: NATIVE, maxZoom: NATIVE + 1, keepBuffer: 4
-}).on('tileload', () => { tilesLoaded++; $('#notice').hidden = true; })
+  tileSize: TILE, bounds, noWrap: true, minZoom: 0, maxNativeZoom: NATIVE, maxZoom: NATIVE + 1,
+  keepBuffer: 8,         // tiles kept round the view (in tile rows), so panning back finds them still there
+  updateInterval: 80     // while dragging, ask for the newly uncovered tiles this often (Leaflet's default is 200 ms)
+}).setZIndex(1).on('tileload', () => { tilesLoaded++; $('#notice').hidden = true; })
   .on('tileerror', () => { if (!tilesLoaded) $('#notice').hidden = false; })
   .addTo(map);
 {
@@ -264,15 +280,16 @@ const tileLayer = new SmoothTiles(TILE_URL, {
   const prefetch = () => {
     if (!tilesLoaded || document.hidden) return;
     const z0 = Math.round(map.getZoom()), c = map.getCenter(), s = map.getSize();
-    for (const z of [z0 + 1, z0 - 1]) {
+    // this zoom a screen further out in every direction (where a pan goes next), then the levels in and out
+    for (const [z, grow, most] of [[Math.min(NATIVE, z0), 3, 160], [z0 + 1, 1, 48], [z0 - 1, 1, 48]]) {
       if (z < 0 || z > NATIVE) continue;
       const cp = map.project(c, z), n = Math.ceil(INFO.width / Math.pow(2, NATIVE - z) / TILE), m = Math.ceil(INFO.height / Math.pow(2, NATIVE - z) / TILE);
-      const x0 = Math.max(0, Math.floor((cp.x - s.x / 2) / TILE)), x1 = Math.min(n - 1, Math.floor((cp.x + s.x / 2) / TILE));
-      const y0 = Math.max(0, Math.floor((cp.y - s.y / 2) / TILE)), y1 = Math.min(m - 1, Math.floor((cp.y + s.y / 2) / TILE));
+      const x0 = Math.max(0, Math.floor((cp.x - s.x * grow / 2) / TILE)), x1 = Math.min(n - 1, Math.floor((cp.x + s.x * grow / 2) / TILE));
+      const y0 = Math.max(0, Math.floor((cp.y - s.y * grow / 2) / TILE)), y1 = Math.min(m - 1, Math.floor((cp.y + s.y * grow / 2) / TILE));
       const list = [];
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) list.push([x, y, Math.hypot(x - (x0 + x1) / 2, y - (y0 + y1) / 2)]);
       list.sort((a, b) => a[2] - b[2]);
-      for (const [x, y] of list.slice(0, 48)) {
+      for (const [x, y] of list.slice(0, most)) {
         const u = TILE_URL.replace('{z}', z).replace('{y}', y).replace('{x}', x);
         if (warm.has(u)) continue; warm.add(u);
         const im = new Image(); im.decoding = 'async'; im.src = u;
@@ -280,7 +297,7 @@ const tileLayer = new SmoothTiles(TILE_URL, {
     }
     if (warm.size > 3000) warm.clear();
   };
-  map.on('moveend', () => { clearTimeout(timer); timer = setTimeout(prefetch, 700); });
+  map.on('moveend', () => { clearTimeout(timer); timer = setTimeout(prefetch, 350); });
 }
 
 map.fitBounds(bounds);
@@ -364,6 +381,37 @@ function textLabel(m) {
   const svg = `<svg class="tl arc" viewBox="-0.5 -0.5 1 1" style="${css};letter-spacing:0"><defs><path id="${id}" d="M${f(x0)} ${f(y0)} A${f(R)} ${f(R)} 0 ${half > Math.PI / 2 ? 1 : 0} ${up ? 1 : 0} ${f(x1)} ${f(y1)}"/></defs>`
     + `<text font-size="1" text-anchor="middle" style="letter-spacing:${sp}px;fill:currentColor${halo ? `;stroke:${halo};stroke-width:0.14px;stroke-linejoin:round;paint-order:stroke` : ''}"><textPath href="#${id}" startOffset="50%">${escHTML(name)}</textPath></text></svg>`;
   const wrap = h('span', { class: 'tlwrap' }); wrap.innerHTML = svg; return wrap.firstChild;
+}
+
+// Name-only places into map names (Names on the map): each becomes a name whose points lie along the arc its Curve
+// gave it (the same arc textLabel draws), turned by its rotation, at the size it shows at now, in the same lettering.
+function textToNames(list) {
+  const z = map.getZoom(), out = [];
+  for (const m of list) {
+    const name = String(m.name || '').trim(); if (!name) continue;
+    const { sp } = letteringCss(m, true), ital = sv(m, 'ital'), caps = sv(m, 'caps'), ink = sv(m, 'ink');
+    const size = sizeOf(m) * Math.pow(2, (NATIVE - z) * (1 - ICON_GROWTH));   // map names grow with the map; places more slowly
+    const curve = Math.max(-300, Math.min(300, +m.curve || 0)), W = name.length * (0.52 + sp) + 0.2;
+    let ems;   // the baseline, in ems from the place's spot
+    if (Math.abs(curve) < 1) ems = [-W / 2, 0, W / 2].map(x => [x, 0.32]);
+    else {
+      const A = Math.abs(curve) * Math.PI / 180, R = W / A, b = 0.32, up = curve > 0;
+      const pt = a => up ? [R * Math.sin(a), b + R - R * Math.cos(a)] : [R * Math.sin(a), -b - R + R * Math.cos(a) + 0.7];
+      const n = Math.max(3, Math.min(9, Math.round(Math.abs(curve) / 30) + 3));
+      ems = Array.from({ length: n }, (_, i) => pt(-A / 2 + A * i / (n - 1)));
+    }
+    const r = (+m.rot || 0) * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+    const pts = ems.map(([x, y]) => [Math.round(m.x + (x * c - y * s) * size), Math.round(m.y + (x * s + y * c) * size)]);
+    const lb = { id: uid('w'), text: name, kind: 'other', pts, size: Math.round(size), opacity: 0.95, spacing: +sp.toFixed(3), italic: ital !== false, caps: !!caps };
+    if (ink) lb.color = ink;
+    const t = typeOf(m); if (t.minZoom != null) lb.minZoom = t.minZoom; if (t.maxZoom != null) lb.maxZoom = t.maxZoom;
+    out.push({ m, lb });
+  }
+  if (!out.length) return;
+  const ids = new Set(out.map(o => o.m.id));
+  change(() => { (data.labels = data.labels || []).push(...out.map(o => o.lb)); data.markers = data.markers.filter(x => !ids.has(x.id)); });
+  if (MT && MT.selectName) MT.selectName(out[out.length - 1].lb.id);
+  toast(out.length === 1 ? `“${out[0].lb.text}” is now a map name: drag its points to bend it.` : `${out.length} names are now map names. Ctrl+Z puts them back.`);
 }
 
 // The lettering fields, for one entry, several at once, or a type's preset (Unity-style: where the chosen ones differ,
@@ -752,7 +800,8 @@ function markerForm(m) {
     isText ? h('div', null, h('label', null, 'Rotation (degrees)'),
       h('input', { type: 'number', step: 1, value: m.rot || '', placeholder: '0',
         onchange: e => set(x => { const v = +e.target.value; if (v) x.rot = v; else delete x.rot; }) })) : null,
-    isText ? textStyleFields([m], fn => set(fn), { curve: true, text: true, base: (o, k) => typeOf(o)[k] }) : [
+    isText ? [textStyleFields([m], fn => set(fn), { curve: true, text: true, base: (o, k) => typeOf(o)[k] }),
+      placed && MT ? h('div', { class: 'btnrow' }, h('button', { class: 'btn', title: 'Turn this into a name in Names on the map, with points to drag, set along the curve it has now', onclick: () => textToNames([m]) }, 'Make it a map name')) : null] : [
     h('label', null, 'Icon'),
     h('div', { class: 'iconpick' },
       h('button', { class: 'prev', title: 'Choose an icon, or none', onclick: () => pickIcon(iconOf(m), path => {
@@ -875,6 +924,7 @@ function multiForm() {
     h('h2', null, 'Lettering'),
     textStyleFields(list, apply, { curve: allText, text: allText, base: (o, k) => typeOf(o)[k] }),
     anyText && !allText ? h('p', { class: 'small muted' }, 'Curve and rotation are for name-only places: pick only those to change them.') : null,
+    allText && MT ? h('div', { class: 'btnrow' }, h('button', { class: 'btn', title: 'Turn these into names in Names on the map, each set along the curve it has now', onclick: () => textToNames(list) }, `Make all ${list.length} map names`)) : null,
     h('div', { class: 'row' }, textField('Nation', 'nation', { list: 'dlNation' }), textField('Region / Province', 'region', { list: 'dlRegion' })),
     h('div', { class: 'btnrow' },
       h('button', { class: 'btn', onclick: () => closePanel() }, 'Done'),
@@ -1630,6 +1680,75 @@ function polPop(on, delay) {
 $('#polToggle').addEventListener('pointerenter', () => polPop(true));
 $('#polToggle').addEventListener('pointerleave', () => polPop(false, 500));
 $('#polToggle').addEventListener('contextmenu', e => { e.preventDefault(); if (polOn) polPop(true); });
+
+// ───────────────────────── the Underdark ─────────────────────────
+//
+// The Worldcave beneath the world: its own tiles (underdark/{z}/{y}/{x}.webp, the same grid as the map's), laid over
+// the map tiles and under everything else, with its names (underdark/places.json) shown while it's up. The button
+// appears once the tiles are there. How strongly it covers the surface: a slider beside the button, like the borders'.
+let underOn = false, underLayer = null, underNames = null, underPopT = null;
+let underA = (() => { const v = parseFloat(store.get('valanar-under-alpha')); return isFinite(v) ? Math.max(0.1, Math.min(1, v)) : 1; })();
+const UNDER = TILES + 'underdark/';
+fetch(UNDER + '0/0/0.webp', { method: 'HEAD' }).then(r => { if (r.ok) { $('#underToggle').hidden = false; if (store.get('valanar-under') === '1') { underOn = true; syncUnder(); } } }).catch(() => {});
+function underPlaces() {
+  if (underNames) return;
+  underNames = L.layerGroup();
+  fetch(UNDER + 'places.json?v=' + Date.now()).then(r => r.ok ? r.json() : []).then(list => {
+    for (const p of list || []) {
+      const el = h('div', { class: 'udname ud-' + (p.kind || 'other'), title: p.note || '' }, p.name);
+      L.marker(toLatLng(p.x, p.y), { icon: L.divIcon({ className: 'udmark', html: el.outerHTML, iconSize: [0, 0] }), interactive: !!p.note, keyboard: false })
+        .bindTooltip(p.note || '', { direction: 'top', offset: [0, -8], className: 'udtip' }).addTo(underNames);
+      underNames.getLayers().slice(-1)[0].options.minZ = p.zoom ?? 0;
+    }
+    showUnderNames();
+  }).catch(() => {});
+}
+function showUnderNames() {
+  if (!underNames) return;
+  const z = map.getZoom();
+  for (const m of underNames.getLayers()) { const el = m.getElement(); if (el) el.style.display = z >= m.options.minZ ? '' : 'none'; }
+}
+map.on('zoomend', showUnderNames);
+function syncUnder() {
+  if (underOn && !underLayer) {
+    underLayer = L.tileLayer(UNDER + '{z}/{y}/{x}.webp?v=1', {
+      tileSize: TILE, bounds, noWrap: true, minZoom: 0, maxNativeZoom: NATIVE, maxZoom: NATIVE + 1, keepBuffer: 4, opacity: underA, className: 'tiles-under'
+    }).setZIndex(2);
+  }
+  if (underOn) underPlaces();
+  if (underLayer) { if (underOn) underLayer.addTo(map); else underLayer.remove(); }
+  if (underNames) { if (underOn) { underNames.addTo(map); showUnderNames(); } else underNames.remove(); }
+  document.body.classList.toggle('underdark', underOn);
+  $('#underToggle').classList.toggle('on', underOn);
+}
+const underPopEl = (() => {
+  const pop = document.createElement('div'); pop.className = 'ambvol polvol'; pop.hidden = true;
+  const lab = document.createElement('div'); lab.className = 'lab'; lab.textContent = 'Underdark';
+  const rng = document.createElement('input'); rng.type = 'range'; rng.min = 10; rng.max = 100; rng.step = 1; rng.value = Math.round(underA * 100); rng.setAttribute('aria-label', 'How strongly the Underdark covers the surface');
+  const out = document.createElement('span'); out.textContent = Math.round(underA * 100) + '%';
+  rng.addEventListener('input', () => { underA = rng.value / 100; out.textContent = rng.value + '%'; if (underLayer) underLayer.setOpacity(underA); });
+  rng.addEventListener('change', () => store.set('valanar-under-alpha', String(underA)));
+  pop.append(lab, rng, out);
+  pop.addEventListener('pointerenter', () => clearTimeout(underPopT));
+  pop.addEventListener('pointerleave', () => underPop(false, 400));
+  document.body.append(pop);
+  return pop;
+})();
+function underPop(on, delay) {
+  clearTimeout(underPopT);
+  if (!on) { underPopT = setTimeout(() => { underPopEl.hidden = true; }, delay || 0); return; }
+  if (!underOn) return;
+  const r = $('#underToggle').getBoundingClientRect();
+  underPopEl.style.left = (r.right + 8) + 'px'; underPopEl.style.top = (r.top + r.height / 2) + 'px';
+  underPopEl.hidden = false;
+}
+$('#underToggle').addEventListener('click', () => {
+  underOn = !underOn; store.set('valanar-under', underOn ? '1' : '0');
+  syncUnder(); underPop(underOn);
+});
+$('#underToggle').addEventListener('pointerenter', () => underPop(true));
+$('#underToggle').addEventListener('pointerleave', () => underPop(false, 500));
+$('#underToggle').addEventListener('contextmenu', e => { e.preventDefault(); if (underOn) underPop(true); });
 
 // ───────────────────────── ruler ─────────────────────────
 //
@@ -3051,6 +3170,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'e' && CAN_EDIT) { setEditMode(!editMode); return; }
   if (!editMode && e.key === 'r' && view === 'map') { setRuler(!rulerOn); return; }
   if (!editMode && e.key === 'b' && view === 'map') { $('#polToggle').click(); return; }
+  if (!editMode && e.key === 'u' && view === 'map' && !$('#underToggle').hidden) { $('#underToggle').click(); return; }
   if (!editMode) return;
   if (e.key === 's' && placing && placing.kind === 'unplaced') { advancePlacing(placing.id); renderBanner(); renderPanel(); return; }
   const m = selectedId && findMarker(selectedId);
@@ -3396,6 +3516,7 @@ modCtx.blazonFor = name => { const n = nationNamed(name); return n && HERALD ? H
 if (window.ValanarTales && !SCENE) TALES = window.ValanarTales(PLAY);
 if (window.ValanarReach && !SCENE) REACH = window.ValanarReach(PLAY);
 if (window.ValanarPresence && SERVER && !EMBED && !SCENE) PRESENCE = window.ValanarPresence(PLAY);
+if (window.ValanarMapChat && PRESENCE) window.ValanarMapChat(PLAY, PRESENCE);
 if (window.ValanarPostcard && !SCENE) POSTCARD = window.ValanarPostcard(PLAY);
 if (window.ValanarArmies && !SCENE) { ARMY = window.ValanarArmies(Object.assign({}, PLAY, { change, toPixel, rulerOn: () => rulerOn, rulerAdd, rulerStart, redrawRuler })); ARMY.sync(); }
 if (window.ValanarArmsShop && HERALD && CAN_EDIT && !SCENE) ARMSHOP = window.ValanarArmsShop(Object.assign({}, PLAY, { armsOf, setArms }));
@@ -3418,6 +3539,7 @@ if (!SCENE) {
   }
   if (NAMES && WIKIUI) addAction({ label: 'The Name Forge', hint: 'Names for people, places and gods, in the world’s own style', keys: 'names generator npc', icon: I('<path d="M4 20l7-7M13.5 4.5l6 6-3 3-6-6z"/><path d="M9 9l-2-2M15 15l2 2"/>'), run: go('#/wiki/Special:Names') });
   addAction({ get label() { return polOn ? 'Hide the borders' : 'Show the borders'; }, hint: 'The nations and their borders', keys: 'borders nations political countries', icon: icon('polToggle'), key: 'B', run: onMap(() => $('#polToggle').click()) });
+  addAction({ get label() { return underOn ? 'Leave the Underdark' : 'The Underdark'; }, hint: 'The Worldcave beneath the map: tunnels, caverns, lakes and cities', keys: 'underdark worldcave caves underground tunnels caverns below', icon: icon('underToggle'), key: 'U', when: () => !$('#underToggle').hidden, run: onMap(() => $('#underToggle').click()) });
   if (ARMSHOP) addAction({ label: 'The Heraldry Workshop', hint: 'Every nation’s coat of arms, to change', keys: 'heraldry arms coat shield blazon crest sigil', icon: '⚜', run: () => ARMSHOP.open(activeNation) });
   if (POSTCARD) addAction({ label: 'A postcard', hint: 'The map as you see it, framed, to save or send', keys: 'postcard picture screenshot photo image save share print', icon: icon('postcardToggle'), run: onMap(() => POSTCARD.open()) });
   addAction({ label: 'Ruler', hint: 'Measure distances and travel time', keys: 'measure distance miles', icon: icon('rulerToggle'), key: 'R', run: onMap(() => setRuler(!rulerOn)) });
@@ -3474,6 +3596,12 @@ window.valanarMap = { syncMarkers, amb: AMB, play: { TALES, WAYF, REACH, NAMES, 
 window.VALANAR = { get ambience() { return AMB; }, canEdit: CAN_EDIT, setEditMode: on => { if (CAN_EDIT) setEditMode(!!on); }, get editMode() { return editMode; }, map, toLatLng, toPixel, dragRuler,
   atlas: ATLAS, size: { w: INFO.width, h: INFO.height }, native: NATIVE, setFogTest: fn => { fogTest = fn || null; applyVisibility(); },
   setRuler: on => { if (!!on !== rulerOn) setRuler(!!on); },
+  // the places with an icon, for tokens to stand at: where, and how big the icon is on screen now (0: not shown)
+  places: () => data.markers.filter(m => !typeOf(m).text && hasIcon(m)).map(m => {
+    const rec = live.get(m.id), el = rec && rec.marker.getElement(), img = el && !el.classList.contains('hid') && el.querySelector('img');
+    const r = img ? img.getBoundingClientRect() : null;
+    return { id: m.id, name: m.name, type: m.type, x: m.x, y: m.y, r: r && r.width ? Math.max(r.width, r.height) / 2 : 0 };
+  }),
   // keep the view to a box of the map ({ x0, y0, x1, y1 } in map pixels), or let it go again (null)
   restrict: box => {
     restrictBox = box ? L.latLngBounds(toLatLng(box.x0, box.y1), toLatLng(box.x1, box.y0)) : null;

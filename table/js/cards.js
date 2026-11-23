@@ -1,5 +1,7 @@
 /* Item cards: every weapon, armour, piece of gear and magic item as a collectible-style card.
- *  - the compendium: the SRD 5.1 items (data/items-srd.json) plus the GM's own cards (state.camp.items)
+ *  - the compendium: the SRD 5.1 items (data/items-srd.json), the items the GM has brought in from other books
+ *    (kept by the server for every campaign, /api/compendium/items: one replaces the SRD card of the same name),
+ *    and this campaign's own cards (state.camp.items)
  *  - V.cardEl(item): a card; V.showItemCard(item, from): a card up close with what you can do with it
  *  - the Items tab: search and filter, drag a card anywhere
  *  - inventories: each character's cards (V.openInventory), filled by dropping cards on the character in the
@@ -13,10 +15,22 @@ const DRAG = 'text/x-vtt-item';
 V.itemDragType = DRAG;
 
 // ───────── the compendium ─────────
-let srd = null, srdP = null;
-V.loadItems = () => srdP || (srdP = fetch('/table/data/items-srd.json').then(r => r.json()).then(d => { srd = d; V.emit('itemsLoaded'); return d; }).catch(e => { srdP = null; throw e; }));
-const allItems = () => (state.camp && state.camp.items || []).concat(srd ? srd.items : []);
-V.itemById = id => allItems().find(i => i.id === id) || null;
+let srd = null, srdP = null, extra = [], merged = [];
+V.loadItems = (force) => (!force && srdP) || (srdP = Promise.all([
+  srd ? Promise.resolve(srd) : fetch('/table/data/items-srd.json').then(r => r.json()),
+  fetch('/api/compendium/items', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : { items: [] }).catch(() => ({ items: [] }))
+]).then(([d, x]) => {
+  srd = d; extra = x.items || [];
+  // a card brought in takes the place of the SRD card of the same name (and keeps its picture if it has none)
+  const byName = new Map(srd.items.map(i => [i.name.toLowerCase(), i])), gone = new Set();
+  for (const it of extra) { const s = byName.get(it.name.toLowerCase()); if (s) { gone.add(s); if (!it.gi && s.gi) it.gi = s.gi; } }
+  merged = extra.concat(srd.items.filter(i => !gone.has(i)));
+  V.emit('itemsLoaded'); return d;
+}).catch(e => { srdP = null; throw e; }));
+V.importedItems = () => extra;
+const allItems = () => (state.camp && state.camp.items || []).concat(merged);
+// by id, still finding an SRD card that one brought in has replaced (an inventory may hold it)
+V.itemById = id => allItems().find(i => i.id === id) || (srd && srd.items.find(i => i.id === id)) || null;
 
 const RARITY = { mundane: '', common: 'Common', uncommon: 'Uncommon', rare: 'Rare', 'very rare': 'Very rare', legendary: 'Legendary', artifact: 'Artifact', varies: 'Rarity varies' };
 const rclass = r => 'r-' + String(r || 'mundane').replace(' ', '-');
@@ -123,12 +137,13 @@ V.showItemCard = function (it, from) {
   }
   if (gm && !from.token && !entry) {
     const own = (state.camp.items || []).some(x => x.id === it.id);
-    acts.push(act(own ? 'Edit' : 'Copy to edit', () => { closeView(); V.editItem(own ? it : Object.assign({}, it, { id: null, name: it.name })); }, null, own ? 'Change this card' : 'Make your own version of this card'));
+    acts.push(act(own ? 'Edit card' : 'Edit card (copy)', () => { closeView(); V.editItem(own ? it : Object.assign({}, it, { id: null, name: it.name })); }, null, own ? 'Change this card' : 'Make your own version of this card'));
   }
   const reopen = () => setTimeout(() => V.showItemCard(it, from), 30);
   view = h('div', { class: 'cardview', onclick: e => { if (e.target === view) closeView(); } },
     h('div', { class: 'cvwrap' }, card, h('div', { class: 'cvacts' }, ...acts),
-      srd && String(it.id).startsWith('srd:') ? h('div', { class: 'cvcredit', title: srd.credit }, 'SRD 5.1 · CC-BY-4.0 · Wizards of the Coast') : null),
+      h('div', { class: 'cvcredit', title: srd && String(it.id).startsWith('srd:') ? srd.credit : '' },
+        String(it.id || '').startsWith('srd:') ? 'SRD 5.1 · CC-BY-4.0 · Wizards of the Coast' : (state.camp.items || []).some(x => x.id === it.id) ? 'This campaign’s own card' : V.sourceName ? V.sourceName(it) : it.source || 'Homebrew')),
     h('button', { class: 'cvx', title: 'Close (Esc)', onclick: closeView }, '×'));
   document.body.append(view);
 };
@@ -176,8 +191,8 @@ V.giveItemTo = function (cid, d) {
 };
 // any element that stands for a character takes cards
 V.itemDropTarget = function (el, cid) {
-  const SP = V.spellDragType || 'text/x-vtt-spell';
-  el.addEventListener('dragover', e => { if (e.dataTransfer.types.includes(DRAG) || e.dataTransfer.types.includes(SP)) { e.preventDefault(); e.dataTransfer.dropEffect = e.dataTransfer.types.includes(SP) ? 'copy' : 'move'; el.classList.add('itemdrop'); } });
+  const SP = V.spellDragType || 'text/x-vtt-spell', FT = V.featureDragType || 'text/x-vtt-feature';
+  el.addEventListener('dragover', e => { const ty = e.dataTransfer.types; if (ty.includes(DRAG) || ty.includes(SP) || ty.includes(FT)) { e.preventDefault(); e.dataTransfer.dropEffect = ty.includes(SP) || ty.includes(FT) ? 'copy' : 'move'; el.classList.add('itemdrop'); } });
   el.addEventListener('dragleave', e => { if (!el.contains(e.relatedTarget)) el.classList.remove('itemdrop'); });
   el.addEventListener('drop', e => {
     el.classList.remove('itemdrop');
@@ -185,6 +200,11 @@ V.itemDropTarget = function (el, cid) {
       const sp = V.readSpellDrag(e); if (!sp) return;
       e.preventDefault(); e.stopPropagation();
       return V.learnSpell(typeof cid === 'function' ? cid() : cid, sp);
+    }
+    if (e.dataTransfer.types.includes(FT)) {   // a feature: onto their sheet's features
+      const f = V.readFeatureDrag(e); if (!f) return;
+      e.preventDefault(); e.stopPropagation();
+      return V.learnFeature(typeof cid === 'function' ? cid() : cid, f);
     }
     const d = readDrag(e); if (!d) return;
     e.preventDefault(); e.stopPropagation();
@@ -283,11 +303,12 @@ function renderItems() {
   draw();
   box.replaceChildren(
     h('div', { class: 'ihead' }, search, gm ? h('button', { class: 'btn sm primary', onclick: () => V.editItem({}) }, 'New card') : null,
-      gm ? h('button', { class: 'btn sm', title: 'Bring in item cards from a .json file (an array of cards, or { items: [...] })', onclick: importCards }, 'Import') : null),
+      gm ? h('button', { class: 'btn sm', title: 'Bring in items from other books (5etools files), or a file of cards for this campaign', onclick: () => V.compendiumImport('items') }, 'Import') : null),
     h('div', { class: 'row', style: 'margin:6px 0' }, rar, count),
     tree,
-    h('p', { class: 'muted small icredit', title: srd.credit }, 'Items from the SRD 5.1 by Wizards of the Coast, CC-BY-4.0. Pictures from game-icons.net, CC BY 3.0.'));
+    h('p', { class: 'muted small icredit', title: srd.credit }, 'Items from the SRD 5.1 by Wizards of the Coast, CC-BY-4.0' + (extra.length ? `, plus ${extra.length} brought in` : '') + '. Pictures from game-icons.net, CC BY 3.0.'));
 }
+V.importCards = () => importCards();
 // a file of cards into this campaign's homebrew; a card already here by the same name is left alone
 function importCards() {
   const pick = h('input', { type: 'file', accept: '.json,application/json' });

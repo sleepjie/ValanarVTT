@@ -129,10 +129,18 @@ function applyTool() {
 // Tokens of the world map scene sit on the Leaflet map (in the frame); their x, y are pixels of the full-size map.
 let layer = null, markers = new Map();
 function styleFrame(doc) {
-  if (!doc || doc.getElementById('vttTokStyle')) return;
-  const st = doc.createElement('style'); st.id = 'vttTokStyle';
+  if (!doc || doc.getElementById('vttTokStyle2')) return;
+  const old = doc.getElementById('vttTokStyle'); if (old) old.remove();
+  const st = doc.createElement('style'); st.id = 'vttTokStyle2';
   st.textContent = `
-    .vtt-tok { width: 44px !important; height: 44px !important; margin: -22px 0 0 -22px !important; }
+    .vtt-tok:not(.occ) { width: 44px !important; height: 44px !important; margin: -22px 0 0 -22px !important; }
+    .vtt-tok.occ { width: 32px !important; height: 32px !important; }
+    .vtt-tok.occ .pic { width: 28px; height: 28px; font-size: 11px; box-shadow: 0 1px 5px rgba(0,0,0,0.75), 0 0 0 1px rgba(0,0,0,0.5); }
+    .vtt-tok.occ .nm { top: 30px; font-size: 10px; }
+    .vtt-tok.occ.many .nm { display: none; }
+    .vtt-tok.occ.many:hover .nm { display: block; z-index: 2; }
+    .vtt-occ { animation: vttOcc 3s linear infinite; }
+    @keyframes vttOcc { to { stroke-dashoffset: -14; } }
     .vtt-tok .pic { width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--c, #c9a45c); background: #1b2028 center / cover no-repeat;
       box-shadow: 0 2px 8px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; color: #e8e2d0; font: 700 14px Georgia, serif; }
     .vtt-tok.gm .pic { opacity: 0.55; border-style: dashed; }
@@ -142,30 +150,88 @@ function styleFrame(doc) {
     body.vtt-dropping #map { outline: 3px dashed #c9a45c; outline-offset: -3px; }`;
   doc.head.append(st);
 }
+// ───────── tokens in a town ─────────
+// A token let go on (or near) a settlement or other place stands *in* it: it takes the place's exact spot, and is drawn
+// smaller, up and around the place's icon, so the town still shows. Several in one place fan out round it.
+const SNAP_PX = 26;   // how close (on screen) to a place's icon counts as dropping it there
+function placeNear(A, x, y) {
+  if (!A.places) return null;
+  const s = Math.pow(2, A.map.getZoom() - (A.native || 0));   // screen pixels a map pixel
+  let best = null, bd = Infinity;
+  for (const pl of A.places()) {
+    if (!pl.r) continue;   // not on show (too far out, or under the fog)
+    const d = Math.hypot(pl.x - x, pl.y - y) * s;
+    if (d <= Math.max(SNAP_PX, pl.r + 6) && d < bd) { bd = d; best = pl; }
+  }
+  return best;
+}
+// where a token is, adjusted: onto a place if it was let go by one
+function settle(A, x, y) { const pl = placeNear(A, x, y); return pl ? { x: pl.x, y: pl.y, place: pl } : { x: Math.round(x), y: Math.round(y), place: null }; }
+// the tokens standing in each place: place id → { place, ids (in order) }
+function occupied(A, toks) {
+  if (!A.places) return new Map();
+  const at = new Map(); for (const pl of A.places()) at.set(pl.x + ',' + pl.y, pl);
+  const out = new Map();
+  for (const t of toks) {
+    const pl = at.get(Math.round(t.x) + ',' + Math.round(t.y)); if (!pl) continue;
+    if (!out.has(pl.id)) out.set(pl.id, { place: pl, ids: [] });
+    out.get(pl.id).ids.push(t.id);
+  }
+  return out;
+}
+// the offset (screen pixels) of the i-th of n tokens in a place: an arc over the icon's top
+function fanOffset(i, n, r) {
+  const R = Math.max(r, 10) + 16;
+  if (n === 1) return [Math.round(R * 0.72), Math.round(-R * 0.72)];   // one: up and to the right, like a pin on the town
+  // spread over the top, wider (and further out) the more there are, so they don't cover one another
+  const span = Math.min(Math.PI * 1.25, 0.6 * (n - 1)), Rn = Math.max(R, 31 * (n - 1) / span), a0 = -Math.PI / 2 - span / 2;
+  const a = a0 + span * (i / (n - 1));
+  return [Math.round(Math.cos(a) * Rn), Math.round(Math.sin(a) * Rn)];
+}
+
+let occLayer = null;
 function drawTokens() {
   const A = sceneA(), L = sceneL();
   if (!A || !L) return;
   styleFrame(F.scene.contentDocument);
   ensurePanes(A.map);
   if (!layer) layer = L.layerGroup().addTo(A.map);
+  if (!occLayer) occLayer = L.layerGroup().addTo(A.map);
+  if (!A.map._vttOcc) { A.map._vttOcc = true; A.map.on('zoomend', () => drawTokens()); }
   const toks = worldScene() ? [...state.scene.tokens.values()] : [];
   const seen = new Set();
+  // who's in which place, and a ring round each place someone's in
+  const occ = occupied(A, toks.filter(t => t.layer !== 'gm' || V.isGM())), slot = new Map();
+  occLayer.clearLayers();
+  for (const { place, ids } of occ.values()) {
+    ids.forEach((id, i) => slot.set(id, { i, n: ids.length, r: place.r }));
+    const t0 = state.scene.tokens.get(ids[0]), owner = t0 && (t0.owners || []).map(V.member).filter(Boolean)[0];
+    if (place.r) occLayer.addLayer(L.circleMarker(A.toLatLng(place.x, place.y), { pane: 'vtttok', radius: place.r + 3, weight: 2, color: owner ? owner.color : '#c9a45c',
+      opacity: 0.85, fill: false, dashArray: '4 3', interactive: false, className: 'vtt-occ' }));
+  }
   for (const t of toks) {
     seen.add(t.id);
+    const sl = slot.get(t.id), off = sl ? fanOffset(sl.i, sl.n, sl.r) : null;
     const owner = (t.owners || []).map(V.member).filter(Boolean)[0];
     const html = `<div class="pic" style="--c:${owner ? owner.color : t.color || '#c9a45c'};${t.img ? `background-image:url('${String(t.img).replace(/['"()\\]/g, encodeURIComponent)}')` : `background-color:${t.color || '#555'}`}">${t.img ? '' : V.initials(t.name)}</div>${t.nameShown !== false || V.canControl(t) ? `<div class="nm">${String(t.name).replace(/[<&>"]/g, c => ({ '<': '&lt;', '&': '&amp;', '>': '&gt;', '"': '&quot;' })[c])}</div>` : ''}`;
-    const sig = html + (t.layer || '') + V.canControl(t);
+    const sig = html + (t.layer || '') + V.canControl(t) + (off ? off.join(',') : '');
     let mk = markers.get(t.id);
     if (mk && mk._sig !== sig) { layer.removeLayer(mk); mk = null; }
     if (!mk) {
-      mk = L.marker(A.toLatLng(t.x, t.y), { pane: 'vtttok', icon: L.divIcon({ className: 'vtt-tok' + (t.layer === 'gm' ? ' gm' : ''), html, iconSize: [44, 44] }), draggable: V.canControl(t), keyboard: false, zIndexOffset: 5000, title: t.name });
+      // in a place: smaller, and off to the side of its icon (the anchor moves; the token's spot is still the place's)
+      const sz = off ? 32 : 44, anchor = off ? [sz / 2 - off[0], sz / 2 - off[1]] : [22, 22];
+      mk = L.marker(A.toLatLng(t.x, t.y), { pane: 'vtttok', icon: L.divIcon({ className: 'vtt-tok' + (t.layer === 'gm' ? ' gm' : '') + (off ? ' occ' : '') + (sl && sl.n > 2 ? ' many' : ''), html, iconSize: [sz, sz], iconAnchor: anchor }),
+        draggable: V.canControl(t), keyboard: false, zIndexOffset: 5000, title: t.name + (off ? ' · in ' + (occ.get([...occ.keys()].find(k => occ.get(k).ids.includes(t.id))) || { place: {} }).place.name : '') });
       mk._sig = sig; mk._tid = t.id;
       // dragging by hand measures the trip with the map's ruler (distance and travel times)
       const at = ll => { const p = A.toPixel(ll); return [p.x, p.y]; };
       mk.on('dragstart', () => { mk._from = at(mk.getLatLng()); });
       mk.on('drag', () => { if (mk._from && A.dragRuler) A.dragRuler(mk._from, at(mk.getLatLng())); });
       mk.on('dragend', () => { if (mk._from && A.dragRuler) A.dragRuler(mk._from, at(mk.getLatLng()), true); mk._from = null; });
-      mk.on('dragend', () => { const p = A.toPixel(mk.getLatLng()); V.op({ t: 'token.update', scene: state.scene.id, id: mk._tid, patch: { x: Math.round(p.x), y: Math.round(p.y) } }).catch(() => drawTokens()); });
+      mk.on('dragend', () => {
+        const p = A.toPixel(mk.getLatLng()), at = settle(A, p.x, p.y);
+        V.op({ t: 'token.update', scene: state.scene.id, id: mk._tid, patch: { x: at.x, y: at.y } }).then(() => { if (at.place) V.toast(`${state.scene.tokens.get(mk._tid) ? state.scene.tokens.get(mk._tid).name : 'They'} → ${at.place.name}`); }).catch(() => drawTokens());
+      });
       mk.on('dblclick', e => { L.DomEvent.stop(e); V.tokenOpen(mk._tid); });
       mk.on('contextmenu', e => { L.DomEvent.stop(e); const fr = F.scene.getBoundingClientRect(), ir = (mk._icon.querySelector('.pic') || mk._icon).getBoundingClientRect(); V.tokenMenu(mk._tid, { left: fr.left + ir.left, top: fr.top + ir.top, width: ir.width, height: ir.height }, { world: true }); });
       mk.on('mousedown', () => V.closeTokenMenu && V.closeTokenMenu());
@@ -178,7 +244,7 @@ function drawTokens() {
 function hookDrops() {
   const doc = F.scene.contentDocument; if (!doc || doc._vttDrops) return;
   doc._vttDrops = true;
-  const ok = e => V.isGM() && worldScene() && e.dataTransfer && [...e.dataTransfer.types].includes(V.charDragType);
+  const ok = e => worldScene() && e.dataTransfer && [...e.dataTransfer.types].includes(V.charDragType);
   doc.addEventListener('dragover', e => { if (ok(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; doc.body.classList.add('vtt-dropping'); } });
   doc.addEventListener('dragleave', e => { if (!e.relatedTarget) doc.body.classList.remove('vtt-dropping'); });
   doc.addEventListener('drop', e => {
@@ -186,8 +252,8 @@ function hookDrops() {
     if (!ok(e)) return;
     e.preventDefault();
     const cid = e.dataTransfer.getData(V.charDragType), ch = (state.camp.characters || []).find(x => x.id === cid); if (!ch) return;
-    const A = sceneA(), p = A.toPixel(A.map.mouseEventToLatLng(e));
-    V.charTokenImg(ch).then(img => V.op({ t: 'token.create', scene: state.scene.id, token: { name: ch.name, sheet: ch.id, img: img || null, x: Math.round(p.x), y: Math.round(p.y), size: 1, layer: 'tokens' } }));
+    const A = sceneA(), p = A.toPixel(A.map.mouseEventToLatLng(e)), at = settle(A, p.x, p.y);
+    V.charTokenImg(ch).then(img => V.op({ t: 'token.create', scene: state.scene.id, token: { name: ch.name, sheet: ch.id, img: img || null, x: at.x, y: at.y, size: 1, layer: 'tokens' } }));
   });
 }
 on('tokens', drawTokens); on('meta', drawTokens);

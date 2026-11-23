@@ -19,13 +19,22 @@ window.ValanarPresence = function (ctx) {
   // ───────── the connection ─────────
   function connect() {
     try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'); } catch (e) { return; }
-    ws.onopen = () => { open = true; retry = 0; send({ t: 'site', hidden: prefs.hidden }); lastSent = ''; look(); };
+    ws.onopen = () => { open = true; retry = 0; send({ t: 'site', hidden: prefs.hidden }); lastSent = ''; look(); fire('open', {}); };
     ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (er) { return; } onMsg(m); };
     ws.onclose = () => { open = false; peers = []; drawCoins(); setTimeout(connect, Math.min(60000, 4000 * Math.pow(1.6, retry++)) + Math.random() * 2000); };
     ws.onerror = () => { /* closes after */ };
   }
-  const send = m => { if (open && ws && ws.readyState === 1) ws.send(JSON.stringify(m)); };
+  const send = m => { if (open && ws && ws.readyState === 1) { ws.send(JSON.stringify(m)); return true; } return false; };
+  // other parts of the map (the chat, the sketches) listen for their own messages, and can ask and wait for the answer
+  const hooks = {}, waiting = new Map(); let rid = 0;
+  const fire = (t, m) => { for (const fn of hooks[t] || []) try { fn(m); } catch (e) { console.error(e); } };
+  const ask = m => new Promise((ok, no) => {
+    const r = ++rid; if (!send(Object.assign({}, m, { rid: r }))) return no(new Error('Not connected just now: try again in a moment'));
+    waiting.set(r, { ok, no }); setTimeout(() => { if (waiting.delete(r)) no(new Error('No answer from the server')); }, 15000);
+  });
   function onMsg(m) {
+    if (m.t === 'ack' && waiting.has(m.rid)) { const w = waiting.get(m.rid); waiting.delete(m.rid); if (m.error) w.no(new Error(m.error)); else w.ok(m); return; }
+    if (hooks[m.t]) return fire(m.t, m);
     if (m.t === 'peers') { peers = Array.isArray(m.list) ? m.list : []; drawCoins(); }
     else if (m.t === 'ping' && Array.isArray(m.at)) showPing({ by: m.by, color: m.color, at: m.at });
     else if (m.t === 'worldSaved') window.dispatchEvent(new CustomEvent('valanar-world-saved', { detail: m }));   // (app.js takes it in)
@@ -112,5 +121,5 @@ window.ValanarPresence = function (ctx) {
   }
   function toggleHidden() { prefs.hidden = !prefs.hidden; savePrefs(); send({ t: 'site', hidden: prefs.hidden }); lastSent = ''; look(); drawCoins(); toast(prefs.hidden ? 'Hidden: the others can’t see you.' : 'The others can see you’re here.'); }
   connect();
-  return { look, peers: () => peers.length };
+  return { look, peers: () => peers.length, send, ask, on: (t, fn) => { (hooks[t] = hooks[t] || []).push(fn); }, connected: () => open };
 };

@@ -75,10 +75,11 @@ V.r20MsgEl = function (m) {
 
 // ───────────────────────── the Characters tab ─────────────────────────
 
-let folderOpen = {};
+let folderOpen = {}, dragFolder = null;
 try { folderOpen = JSON.parse(localStorage.getItem('vtt-char-folders') || '{}'); } catch (e) { folderOpen = {}; }
 function bagIcon() { return V.icon ? V.icon('bag') : '🎒'; }
 function saveFolderOpen() { try { localStorage.setItem('vtt-char-folders', JSON.stringify(folderOpen)); } catch (e) { /* not kept */ } }
+const FOLDER_TYPE = 'application/x-vtt-folder';
 const DRAG_TYPE = 'text/x-vtt-char', HO_TYPE = 'text/x-vtt-handout';
 // who plays a character: everyone in the campaign, the GMs marked; ticking one gives it to them
 const everyone = () => (state.camp.members || []).slice().sort((a, b) => (b.role === 'gm') - (a.role === 'gm') || a.name.localeCompare(b.name));
@@ -133,7 +134,7 @@ function otherCampaigns() {
       h('div', { class: 'cfh' }, h('button', { class: 'nm', onclick: () => { folderOpen[k] = !o; saveFolderOpen(); renderChars(); } },
         h('span', { class: 'tw' }, o ? '▾' : '▸'), h('span', { class: 'fi' }, '📁'), h('b', null, oc.name), h('span', { class: 'muted small' }, ` ${oc.chars.length}`))),
       o ? h('div', { class: 'cfb' }, ...oc.chars.map(ch => h('div', { class: 'crow2 elsewhere' },
-        h('span', { class: 'av', style: ch.avatar ? `background-image:url("${ch.avatar}")` : '' }, ch.avatar ? '' : V.initials(ch.name)),
+        V.faceEl(ch),
         h('div', { class: 'nmwrap' }, h('button', { class: 'nm', title: `Open the sheet (in ${oc.name})`, onclick: () => framePanel('x:' + ch.id, `/table/sheet.html?c=${oc.id}&ch=${ch.id}&embed=1`, `${ch.name} · ${oc.name}`, { night: true }) }, h('b', null, ch.name)),
           h('span', { class: 'muted small' }, 'in ' + oc.name)),
         h('button', { class: 'btn sm', title: `A copy of ${ch.name} in this campaign (the one in ${oc.name} stays as it is)`, onclick: async e => {
@@ -161,13 +162,14 @@ function renderChars() {
   const defSheet = (sheets.find(([, v]) => v.mode === c.mode) || sheets[0] || ['dnd5e'])[0];
   const ownerNames = ch => ch.owners.map(V.member).filter(u => u && u.role !== 'gm').map(u => u.name).join(', ');
   const bagIcon2 = ch => (ch.items || []).length ? h('button', { class: 'btn sm bagbtn', title: 'Inventory: their item cards', onclick: () => V.openInventory(ch.id) }, bagIcon(), h('span', null, (ch.items || []).reduce((s, e) => s + e.qty, 0))) : null;
-  const row = ch => (V.itemDropTarget ? V.itemDropTarget : x => x)(h('div', { class: 'crow2', draggable: gm ? 'true' : null,
-      title: gm ? 'Drag onto the map for a token, or onto a folder' : null,
-      ondragstart: e => { e.dataTransfer.setData(DRAG_TYPE, ch.id); e.dataTransfer.setData('text/plain', ch.name); e.dataTransfer.effectAllowed = 'copyMove'; } },
-    h('span', { class: 'av', style: ch.avatar ? `background-image:url("${ch.avatar}")` : '' }, ch.avatar ? '' : V.initials(ch.name)),
+  const mineCh = ch => (ch.owners || []).includes(state.me.id);
+  const row = ch => (V.itemDropTarget ? V.itemDropTarget : x => x)(h('div', Object.assign({ draggable: gm || mineCh(ch) ? 'true' : null,
+      title: [playerOf(ch) ? 'Played by ' + playerNames(ch) : '', gm ? 'Drag onto the map for a token, or onto a folder' : mineCh(ch) ? 'Drag onto the map to place your token' : ''].filter(Boolean).join('\n') || null,
+      ondragstart: e => { e.dataTransfer.setData(DRAG_TYPE, ch.id); e.dataTransfer.setData('text/plain', ch.name); e.dataTransfer.effectAllowed = 'copyMove'; } }, rowLook(ch)),
+    V.faceEl(ch),
     h('div', { class: 'nmwrap' },
       h('button', { class: 'nm', title: 'Open the sheet', onclick: () => V.openSheet(ch.id) }, h('b', null, ch.name)),
-      gm ? playedBy(ch) : h('span', { class: 'muted small' }, [ownerNames(ch) ? 'played by ' + ownerNames(ch) : '', ch.shared ? 'everyone can view' : ''].filter(Boolean).join(' · '))),
+      h('span', { class: 'csum' }, ch.summary || (ch.sheet && /^dnd5e/.test(ch.sheet) ? 'No race or class yet' : ''))),
     bagIcon2(ch),
     ch.canEdit ? h('button', { class: 'btn sm', title: 'Settings', onclick: () => charSettings(ch.id) }, '⋯') : null), ch.id);
   const viewers = ho => ho.shared ? 'everyone' : (ho.viewers || []).map(V.member).filter(Boolean).map(u => u.name).join(', ');
@@ -180,10 +182,24 @@ function renderChars() {
   // a drop zone that files dragged characters into a folder (null = no folder)
   const dropInto = (el, fid) => {
     if (!gm) return el;
-    el.addEventListener('dragover', e => { if (e.dataTransfer.types.includes(DRAG_TYPE) || e.dataTransfer.types.includes(HO_TYPE)) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; el.classList.add('dropping'); } });
+    el.addEventListener('dragover', e => {
+      const ty = e.dataTransfer.types;
+      if (ty.includes(DRAG_TYPE) || ty.includes(HO_TYPE) || (ty.includes(FOLDER_TYPE) && dragFolder && canNest(dragFolder, fid))) {
+        e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move';
+        document.querySelectorAll('#tab-chars .dropping').forEach(x => { if (x !== el) x.classList.remove('dropping'); }); el.classList.add('dropping');
+      }
+    });
     el.addEventListener('dragleave', e => { if (!el.contains(e.relatedTarget)) el.classList.remove('dropping'); });
     el.addEventListener('drop', e => {
       el.classList.remove('dropping');
+      const fold = e.dataTransfer.getData(FOLDER_TYPE);
+      if (fold) {   // a folder into another (or, dropped on the loose list, back to the top)
+        e.preventDefault(); e.stopPropagation(); dragFolder = null;
+        if (!canNest(fold, fid)) return;
+        if (fid) { folderOpen[fid] = true; saveFolderOpen(); }
+        V.op({ t: 'folders.set', folders: folders.map(f => f.id === fold ? Object.assign({}, f, { parent: fid || null }) : f) });
+        return;
+      }
       const cid = e.dataTransfer.getData(DRAG_TYPE), hid = e.dataTransfer.getData(HO_TYPE); if (!cid && !hid) return;
       e.preventDefault(); e.stopPropagation();
       if (fid) { folderOpen[fid] = true; saveFolderOpen(); }
@@ -193,28 +209,38 @@ function renderChars() {
   };
   const inFolder = fid => list.filter(ch => (ch.folder || null) === fid);
   const hoIn = fid => hos.filter(ho => (ho.folder || null) === fid);
+  // folders inside folders: a folder's parent, if that folder still exists (and isn't inside it)
+  const fids = new Set(folders.map(f => f.id));
+  const parentOf = f => (f.parent && fids.has(f.parent) && f.parent !== f.id ? f.parent : null);
+  const under = (a, b) => { for (let p = b, n = 0; p && n < 50; n++) { if (p === a) return true; const pf = folders.find(x => x.id === p); p = pf ? parentOf(pf) : null; } return false; };
+  const canNest = (fold, into) => fold !== into && !(into && under(fold, into));   // not into itself or anything inside it
+  const subOf = fid => folders.filter(f => parentOf(f) === fid);
+  const total = fid => inFolder(fid).length + hoIn(fid).length + subOf(fid).reduce((s, f) => s + total(f.id), 0);
   const folderEl = f => {
-    const kids = inFolder(f.id), hk = hoIn(f.id), open = !!folderOpen[f.id];
+    const kids = inFolder(f.id), hk = hoIn(f.id), subs = subOf(f.id), open = !!folderOpen[f.id];
     return dropInto(h('div', { class: 'cfold' + (open ? ' open' : '') },
-      h('div', { class: 'cfh' },
+      h('div', { class: 'cfh', draggable: gm ? 'true' : null, title: gm ? 'Drag onto another folder to put it inside' : null,
+        ondragstart: e => { e.stopPropagation(); dragFolder = f.id; e.dataTransfer.setData(FOLDER_TYPE, f.id); e.dataTransfer.setData('text/plain', f.name); e.dataTransfer.effectAllowed = 'move'; },
+        ondragend: () => { dragFolder = null; document.querySelectorAll('#tab-chars .dropping').forEach(x => x.classList.remove('dropping')); } },
         h('button', { class: 'nm', onclick: () => { folderOpen[f.id] = !open; saveFolderOpen(); renderChars(); } },
-          h('span', { class: 'tw' }, open ? '▾' : '▸'), h('span', { class: 'fi' }, '📁'), h('b', null, f.name), h('span', { class: 'muted small' }, ` ${kids.length + hk.length}`)),
+          h('span', { class: 'tw' }, open ? '▾' : '▸'), h('span', { class: 'fi' }, '📁'), h('b', null, f.name), h('span', { class: 'muted small' }, ` ${total(f.id)}`)),
         gm ? h('button', { class: 'btn sm', title: 'Folder settings', onclick: () => folderSettings(f.id) }, '⋯') : null),
-      open ? h('div', { class: 'cfb' }, kids.length || hk.length ? [kids.map(row), hk.map(hrow)] : h('p', { class: 'muted small', style: 'margin:4px 8px' }, gm ? 'Empty. Drag characters here.' : 'Empty.')) : null), f.id);
+      open ? h('div', { class: 'cfb' }, kids.length || hk.length || subs.length ? [subs.map(folderEl), kids.map(row), hk.map(hrow)] : h('p', { class: 'muted small', style: 'margin:4px 8px' }, gm ? 'Empty. Drag characters or folders here.' : 'Empty.')) : null), f.id);
   };
   const loose = inFolder(null).concat(list.filter(ch => ch.folder && !folders.some(f => f.id === ch.folder)));
   const looseH = hoIn(null).concat(hos.filter(ho => ho.folder && !folders.some(f => f.id === ho.folder)));
   box.replaceChildren(
     h('div', { class: 'jhead' },
-      V.isGuest() ? null : h('button', { class: 'btn primary', onclick: () => newChar(defSheet), title: 'A new character with a blank sheet' }, 'Character'),
-      gm && V.quickNPC ? h('button', { class: 'btn', title: 'A statted NPC in a few clicks: what they are, a name from the Name Forge, a token on the scene', onclick: () => V.quickNPC() }, 'Quick NPC') : null,
-      gm ? h('button', { class: 'btn', onclick: newHandout, title: 'A new handout' }, 'Handout') : null,
-      gm ? h('button', { class: 'btn', onclick: newFolder, title: 'A new folder' }, 'Folder') : null,
+      V.isGuest() ? null : h('button', { class: 'btn primary', onclick: () => newChar(defSheet), title: 'A new character with a blank sheet' }, jIcon('char'), 'Character'),
+      !V.isGuest() && V.openCreator && sheets.some(([k]) => /^dnd5e/.test(k)) ? h('button', { class: 'btn', onclick: () => V.openCreator(), title: 'Make a 5e character step by step: species, class, rolled ability scores, skills and a free feat' }, jIcon('creator'), 'Creator') : null,
+      gm && V.quickNPC ? h('button', { class: 'btn', title: 'A statted NPC in a few clicks: what they are, a name from the Name Forge, a token on the scene', onclick: () => V.quickNPC() }, jIcon('npc'), 'Quick NPC') : null,
+      gm ? h('button', { class: 'btn', onclick: newHandout, title: 'A new handout' }, jIcon('handout'), 'Handout') : null,
+      gm ? h('button', { class: 'btn wide', onclick: newFolder, title: 'A new folder' }, jIcon('folder'), 'Folder') : null,
       gm && sheets.length > 1 ? h('label', { class: 'jsheet' }, h('span', null, 'New characters get'), h('select', { id: 'newSheet', title: 'Sheet for new characters' }, ...sheets.map(([k, v]) => h('option', { value: k, selected: k === defSheet || null }, v.name)))) : null),
     h('h3', null, `Journal · ${list.length} character${list.length === 1 ? '' : 's'}` + (hos.length ? `, ${hos.length} handout${hos.length === 1 ? '' : 's'}` : '')),
     list.length || folders.length || hos.length ? null : h('p', { class: 'muted' }, gm ? 'No characters yet. Make one, then give it to a player in its settings.' : 'You have no characters yet. Make one, or ask the GM to give you one.'),
-    ...folders.map(folderEl),
-    dropInto(h('div', { class: 'cloose' }, ...loose.map(row), ...looseH.map(hrow), gm && folders.length ? h('p', { class: 'muted small droptip' }, 'Drag a character here to take it out of its folder.') : null), null),
+    ...subOf(null).map(folderEl),
+    dropInto(h('div', { class: 'cloose' }, ...loose.map(row), ...looseH.map(hrow), gm && folders.length ? h('p', { class: 'muted small droptip' }, 'Drag a character or folder here to take it out of its folder.') : null), null),
     gm && list.length ? h('p', { class: 'muted small', style: 'margin-top:10px' }, 'Drag a character onto the map to place a token linked to its sheet.') : null,
     otherCampaigns(),
     !V.isGuest() ? h('div', { class: 'jimport' }, h('span', { class: 'muted small' }, 'Bring in from'),
@@ -237,24 +263,82 @@ function folderSettings(fid) {
   const fs = (state.camp.charFolders || []).slice(), i = fs.findIndex(f => f.id === fid); if (i < 0) return;
   const modal = $('#modal'), close = () => { modal.hidden = true; modal.replaceChildren(); };
   const save = list => V.op({ t: 'folders.set', folders: list });
-  const move = d => { const j = i + d; if (j < 0 || j >= fs.length) return; const l = fs.slice(); [l[i], l[j]] = [l[j], l[i]]; save(l).then(close); };
+  const par = f => f.parent || null, sibs = fs.map((f, k) => k).filter(k => par(fs[k]) === par(fs[i])), at = sibs.indexOf(i);
+  const move = d => { const j = sibs[at + d]; if (j === undefined) return; const l = fs.slice(); [l[i], l[j]] = [l[j], l[i]]; save(l).then(close); };
   const name = h('input', { value: fs[i].name, style: 'width:100%', onkeydown: e => { if (e.key === 'Enter') done(); } });
-  const done = () => { const v = name.value.trim(); if (v && v !== fs[i].name) save(fs.map(f => f.id === fid ? { id: fid, name: v } : f)); close(); };
+  const done = () => { const v = name.value.trim(); if (v && v !== fs[i].name) save(fs.map(f => f.id === fid ? Object.assign({}, f, { name: v }) : f)); close(); };
   const count = (state.camp.characters || []).filter(c => c.folder === fid).length;
   modal.replaceChildren(h('div', { class: 'dialog' },
     h('div', { class: 'dh' }, h('h2', null, 'Folder'), h('button', { onclick: close }, '×')),
     h('div', { class: 'db' }, h('label', null, 'Name'), name,
       h('div', { class: 'row', style: 'margin-top:10px' },
-        h('button', { class: 'btn sm', disabled: i === 0 || null, onclick: () => move(-1) }, 'Move up'),
-        h('button', { class: 'btn sm', disabled: i === fs.length - 1 || null, onclick: () => move(1) }, 'Move down'))),
+        h('button', { class: 'btn sm', disabled: at === 0 || null, onclick: () => move(-1) }, 'Move up'),
+        h('button', { class: 'btn sm', disabled: at === sibs.length - 1 || null, onclick: () => move(1) }, 'Move down'),
+        fs[i].parent ? h('button', { class: 'btn sm', title: 'Take it out of the folder it is in', onclick: () => save(fs.map(f => f.id === fid ? Object.assign({}, f, { parent: (fs.find(x => x.id === f.parent) || {}).parent || null }) : f)).then(close) }, 'Move out a level') : null)),
     h('div', { class: 'df' },
-      h('button', { class: 'btn danger', title: count ? 'Its characters move out of the folder; they are not deleted' : '', onclick: () => { save(fs.filter(f => f.id !== fid)); close(); } }, 'Delete folder'),
+      h('button', { class: 'btn danger', title: 'What is in it moves up into the folder it was in; nothing in it is deleted', onclick: () => { save(fs.filter(f => f.id !== fid).map(f => f.parent === fid ? Object.assign({}, f, { parent: fs[i].parent || null }) : f)); close(); } }, 'Delete folder'),
       h('div', { class: 'grow' }),
       h('button', { class: 'btn primary', onclick: done }, 'Done'))));
   modal.hidden = false;
   name.focus(); name.select();
 }
 V.charDragType = DRAG_TYPE;
+// small line icons for the journal's buttons
+const J_ICONS = {
+  char: '<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20.5c0-4.2 3.4-6.6 7.5-6.6s7.5 2.4 7.5 6.6"/>',
+  creator: '<path d="M4 20 15 9"/><path d="m13.5 7.5 3 3"/><path d="M18 3v3.5M16.25 4.75h3.5M20 11v2.5M18.75 12.25h2.5M8 3.5v2.5M6.75 4.75h2.5"/>',
+  npc: '<path d="M13 2.5 5.5 13.5h5.5L10 21.5l8-11.5h-5.5z"/>',
+  handout: '<path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4M10 12h6M10 16h6"/>',
+  folder: '<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/>',
+};
+function jIcon(k) {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', 'jic'); s.setAttribute('aria-hidden', 'true');
+  s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '1.8'); s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round');
+  s.innerHTML = J_ICONS[k]; return s;
+}
+// who plays a character (anyone owning it but the GM), and the look of its journal row: outlined in that player's colour
+function playerOf(ch) {
+  const os = (ch.owners || []).map(V.member).filter(Boolean);
+  return os.find(u => u.role !== 'gm' && !(V.isGMUser && V.isGMUser(u.id))) || null;
+}
+function playerNames(ch) { return (ch.owners || []).map(V.member).filter(Boolean).map(u => u.name).join(', '); }
+function rowLook(ch) {
+  const p = playerOf(ch);
+  return { class: 'crow2' + (p ? ' played' : ''), style: p ? `--pc:${p.color || '#8a8f98'}` : null };
+}
+// a folder's name with the folders it is inside: "NPCs › Docks"
+function folderPath(f) {
+  const fs = state.camp.charFolders || [], names = [f.name]; let p = f.parent, n = 0;
+  while (p && n++ < 20) { const pf = fs.find(x => x.id === p); if (!pf) break; names.unshift(pf.name); p = pf.parent; }
+  return names.join(' › ');
+}
+
+// ───── a character's face: their token where they have one, else their portrait ─────
+V.faceOf = ch => (ch && (ch.token || ch.avatar)) || null;
+// a face for lists, with the full portrait shown beside it while the pointer is over it
+V.faceEl = (ch, cls) => {
+  const f = V.faceOf(ch);
+  const el = h('span', { class: 'av' + (ch.token ? ' tokface' : '') + (cls ? ' ' + cls : ''), style: f ? `background-image:url("${f}")` : '' }, f ? '' : V.initials(ch.name));
+  if (ch.avatar) { el.addEventListener('pointerenter', () => artPeek(el, ch.avatar, ch.name)); el.addEventListener('pointerleave', () => artPeek(null)); }
+  return el;
+};
+let peekEl = null, peekT = null;
+function artPeek(anchor, src, name) {
+  clearTimeout(peekT);
+  if (!peekEl) { peekEl = h('div', { id: 'artPeek' }, h('img', { alt: '' }), h('span')); document.body.append(peekEl); }
+  if (!anchor) { peekEl.classList.remove('on'); return; }
+  peekT = setTimeout(() => {
+    const img = peekEl.querySelector('img'); img.src = src; peekEl.querySelector('span').textContent = name || '';
+    const r = anchor.getBoundingClientRect(), W = 254, H = 320;
+    // just outside the journal's column, level with the face (the journal is at the right, so usually its left)
+    const col = (anchor.closest('#tab-chars') || anchor).getBoundingClientRect();
+    const left = col.left - W - 10 > 8 ? col.left - W - 10 : col.right + 10;
+    peekEl.style.left = left + 'px'; peekEl.style.top = Math.max(8, Math.min(innerHeight - H - 8, r.top + r.height / 2 - H / 2)) + 'px';
+    peekEl.classList.add('on');
+  }, 120);
+}
+
 on('meta', renderChars);
 async function newChar(defSheet) {
   const sheet = ($('#newSheet') && $('#newSheet').value) || defSheet;
@@ -273,7 +357,15 @@ function charSettings(cid) {
     h('div', { class: 'db' },
       h('label', null, 'Name'), h('input', { value: ch.name, style: 'width:100%', onchange: e => set({ name: e.target.value }) }),
       h('label', null, 'Picture'),
-      h('div', { class: 'row' }, h('span', { class: 'av big', style: ch.avatar ? `background-image:url("${ch.avatar}")` : '' }),
+      h('div', { class: 'row', title: 'Drop a picture here, or choose one',
+          ondragover: e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.currentTarget.classList.add('itemdrop'); } },
+          ondragleave: e => e.currentTarget.classList.remove('itemdrop'),
+          ondrop: async e => {
+            e.preventDefault(); e.currentTarget.classList.remove('itemdrop');
+            const f = [...e.dataTransfer.files].find(x => /^image\/(png|jpeg|webp|gif)$/.test(x.type)); if (!f) return V.toast('A PNG, JPG, WebP or GIF', true);
+            try { const url = await V.upload(f); await set({ avatar: url, token: null }); charSettings(cid); } catch (err) { V.toast(err.message, true); }
+          } },
+        h('span', { class: 'av big', style: ch.avatar ? `background-image:url("${ch.avatar}")` : '' }),
         h('button', { class: 'btn sm', onclick: () => V.pickImage(url => set({ avatar: url, token: null }).then(() => charSettings(cid))) }, ch.avatar ? 'Change' : 'Add a picture'),
         ch.avatar ? h('button', { class: 'btn sm', onclick: () => set({ avatar: null }).then(() => charSettings(cid)) }, 'Remove') : null),
       h('label', null, 'Token'),
@@ -284,7 +376,7 @@ function charSettings(cid) {
         ownerPicker(ch),
         players.length ? null : h('p', { class: 'muted small' }, 'No players in this campaign yet: add them in Admin.'),
         (state.camp.charFolders || []).length ? [h('label', null, 'Folder'), h('select', { onchange: e => set({ folder: e.target.value || null }) },
-          h('option', { value: '' }, '(none)'), ...state.camp.charFolders.map(f => h('option', { value: f.id, selected: ch.folder === f.id || null }, f.name)))] : null,
+          h('option', { value: '' }, '(none)'), ...state.camp.charFolders.map(f => h('option', { value: f.id, selected: ch.folder === f.id || null }, folderPath(f))))] : null,
         h('label', { class: 'inline', style: 'margin-top:10px' }, h('input', { type: 'checkbox', checked: ch.shared, onchange: e => set({ shared: e.target.checked }) }), 'Everyone can view this sheet (read only)')] : null),
     h('div', { class: 'df' },
       h('button', { class: 'btn danger', onclick: () => { if (confirm(`Delete ${ch.name}? Ctrl+Z on the table brings them back.`)) { V.op({ t: 'char.delete', id: cid }); close(); } } }, 'Delete'),
@@ -414,7 +506,7 @@ V.tokenPanelExtras = function (t, set) {
       h('select', { style: 'width:100%', onchange: e => {
         const id = e.target.value || null;
         const c2 = id && chars.find(c => c.id === id);
-        set(Object.assign({ sheet: id }, c2 && (!t.name || t.name === 'New token') ? { name: c2.name } : {}, c2 && c2.avatar && !t.img ? { img: c2.avatar } : {}));
+        set(Object.assign({ sheet: id }, c2 && (!t.name || t.name === 'New token') ? { name: c2.name } : {}, c2 && V.faceOf(c2) && !t.img ? { img: V.faceOf(c2) } : {}));
       } }, h('option', { value: '' }, 'None'), ...chars.map(c => h('option', { value: c.id, selected: c.id === t.sheet || null }, c.name)))) : null,
     ch ? h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn', onclick: () => V.openSheet(ch.id) }, `Open ${ch.name}’s sheet`),
       h('span', { class: 'muted small' }, 'Hit points follow the sheet.')) : null);
