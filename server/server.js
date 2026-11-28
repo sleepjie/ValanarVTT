@@ -250,14 +250,29 @@ const roleIn = (c, u) => u ? (u.role === 'gm' && !playerIn(c, u.id) ? 'gm' : 'pl
 const CONDITIONS_MAX = 20;
 function cleanGrid(g = {}) {
   return {
-    type: ['square', 'hexr', 'hexc', 'none'].includes(g.type) ? g.type : 'square',
+    type: ['square', 'hexr', 'hexc', 'iso', 'none'].includes(g.type) ? g.type : 'square',
     size: num(g.size, 100, 4, 4000), ox: num(g.ox, 0, -1e5, 1e5), oy: num(g.oy, 0, -1e5, 1e5),
     feet: num(g.feet, 5, 0.01, 10000), units: str(g.units, 12) || 'ft',
     diagonal: ['one', 'alt', 'euclid'].includes(g.diagonal) ? g.diagonal : 'one',
     color: /^#[0-9a-f]{6}$/i.test(g.color) ? g.color : '#000000', alpha: num(g.alpha, 0.35, 0, 1)
   };
 }
-const SCENE_KEYS = ['name', 'folder', 'kind', 'image', 'grid', 'darkness', 'fog', 'vision', 'notes', 'bg', 'area', 'explored', 'rings', 'clock', 'weather', 'atlas', 'climate', 'journeys', 'plan'];
+// the lights a forge map's pieces give (iso-core.js extras: a torch, a lamp, a hearth...)
+const ISO_LIGHTS = {
+  torch: { bright: 10, dim: 25, color: '#ffb060', anim: 'torch', intensity: 0.6 }, lamp: { bright: 10, dim: 20, color: '#ffd08a', anim: 'candle', intensity: 0.55 },
+  candle: { bright: 5, dim: 15, color: '#ffd9a0', anim: 'candle', intensity: 0.5 }, hearth: { bright: 10, dim: 25, color: '#ff9a50', anim: 'torch', intensity: 0.65 },
+  fire: { bright: 15, dim: 30, color: '#ff9a50', anim: 'torch', intensity: 0.65 }, window: { bright: 0, dim: 10, color: '#ffc477', anim: 'none', intensity: 0.4 }
+};
+const ISO_KIND = { house: 'in', hall: 'in', ruins: 'under', ruins_ice: 'under', cave: 'under', keep: 'under' };   // (maps saved before the forge said)
+function cleanIso(m) {
+  const w = Math.round(num(m.w, 0, 1, 128)), h = Math.round(num(m.h, 0, 1, 128)), b64 = (v, n) => { const t = String(v || ''); return /^[A-Za-z0-9+/=]*$/.test(t) && t.length <= Math.ceil(n / 3) * 4 + 4 ? t : ''; };
+  return { v: 2, biome: /^[a-z_]{1,16}$/.test(String(m.biome || '')) ? String(m.biome) : 'grass', w, h, terr: b64(m.terr, w * h), over: b64(m.over, w * h * 2), obj: b64(m.obj, w * h * 2), edge: b64(m.edge, w * h), flip: b64(m.flip, w * h), lv: b64(m.lv, w * h),   // (the land's height: the forge's rises and their cliffs)
+    // what the forge worked out for the table: the sort of map, where its lights are (cells, a kind each), the houses' footprints
+    kind: ['out', 'under', 'in'].includes(m.kind) ? m.kind : null,
+    lights: (Array.isArray(m.lights) ? m.lights : []).slice(0, 300).filter(l => Array.isArray(l) && l.length >= 3).map(l => [num(l[0], 0, -1, 129), num(l[1], 0, -1, 129), Object.hasOwn(ISO_LIGHTS, String(l[2])) ? String(l[2]) : 'torch']),
+    houses: (Array.isArray(m.houses) ? m.houses : []).slice(0, 400).filter(q => Array.isArray(q) && q.length >= 4).map(q => q.slice(0, 4).map(v => Math.round(num(v, 0, -1, 129)))) };   // edge: indoors, walls and doors between cells
+}
+const SCENE_KEYS = ['name', 'folder', 'kind', 'image', 'grid', 'darkness', 'fog', 'vision', 'notes', 'bg', 'area', 'explored', 'rings', 'clock', 'weather', 'atlas', 'climate', 'journeys', 'plan', 'iso'];
 function cleanSceneMeta(p) {
   const out = {};
   if ('name' in p) out.name = str(p.name, 80) || 'Scene';
@@ -270,6 +285,8 @@ function cleanSceneMeta(p) {
   if ('notes' in p) out.notes = str(p.notes, 20000);
   if ('bg' in p) out.bg = /^#[0-9a-f]{6}$/i.test(p.bg) ? p.bg : '#1b1d22';
   if ('plan' in p) out.plan = p.plan ? Plan.normalize(p.plan) : null;   // the room planner's squares (table/shared/plan.js): it makes the walls
+  // a map from the map forge (table/iso): isometric tiles, its cells packed as base64 (table/iso/iso-core.js)
+  if ('iso' in p) out.iso = p.iso && typeof p.iso === 'object' ? cleanIso(p.iso) : null;
   if ('kind' in p) out.kind = p.kind === 'world' ? 'world' : 'battle';   // world: the tiled world map with its wiki
   if ('atlas' in p) out.atlas = /^a[a-f0-9]{12}$/.test(String(p.atlas || '')) ? String(p.atlas) : null;   // world: which version of the map (null: the main one)
   if ('rings' in p) out.rings = p.rings !== false;   // false: tokens on this scene default to bare sprites, no ring
@@ -919,6 +936,7 @@ class Room {
         for (const k of Object.keys(p)) { prev[k] = clone(s[k] ?? null); s[k] = p[k]; }
         if (('image' in p && !s.plan) || ('plan' in p && !p.plan)) delete s.thumb;   // a new map: its old picture goes (the GM's browser makes another)
         if ('plan' in p || ('grid' in p && s.plan)) { this.syncPlanWalls(s); this.syncPlanLights(s); }   // the plan's walls and lights follow it
+        if ('iso' in p || ('grid' in p && s.iso)) this.syncIsoWalls(s);   // a forge map's walls follow it
         if ('plan' in p && JSON.stringify(prev.plan) !== JSON.stringify(s.plan)) this.planChanged(s, prev.plan, s.plan, user, op.note);
         this.wallsChanged(s);
         return { t: 'scene.update', id: s.id, patch: prev };
@@ -1059,6 +1077,7 @@ class Room {
         const l = op.restore ? op.light : cleanLight(op.light || {});
         if (s.lights.length >= 500) throw new Error('500 lights per scene at most');
         if (op.restore && l.src === 'plan' && s.planDark) s.planDark = s.planDark.filter(k => k !== l.key);
+        if (op.restore && l.src === 'iso' && s.isoDark) s.isoDark = s.isoDark.filter(k => k !== l.key);
         if (s.lights.some(x => x.id === l.id)) throw new Error('Light exists');
         s.lights.push(l);
         op.light = { id: l.id };
@@ -1078,6 +1097,7 @@ class Room {
         if (i < 0) throw new Error('No such light');
         const [l] = s.lights.splice(i, 1);
         if (l.src === 'plan' && l.key) s.planDark = [...new Set([...(s.planDark || []), l.key])].slice(-500);   // the plan won't light it again
+        if (l.src === 'iso' && l.key) s.isoDark = [...new Set([...(s.isoDark || []), l.key])].slice(-500);     // nor the forge map
         return { t: 'light.add', scene: s.id, light: l, restore: true };
       }
       // ── ambient sounds ──
@@ -1509,6 +1529,78 @@ class Room {
   }
   wallsChanged(s) { if (this.visCache) this.visCache.delete(s.id); }
   // a plan's walls (src: 'plan'), made again from it; doors keep whether they were open. Walls drawn by hand stay.
+  // a forge map's walls (src: 'iso'): along every edge between floor (or land) and the rock (or void) beyond, so sight
+  // and light stop there. Made again whenever the map changes; walls the GM drew stay.
+  syncIsoWalls(s) {
+    const was = new Map(s.walls.filter(w => w.src === 'iso' && w.door).map(w => [w.door, w]));
+    s.walls = s.walls.filter(w => w.src !== 'iso');
+    const m = s.iso, g = s.grid;
+    if (m && m.w && g && g.type === 'iso') {
+      const t = Buffer.from(m.terr || '', 'base64'), W = m.w, H = m.h, hw = g.size / 2, hh = g.size / 4;
+      // out of doors the land goes on past the map's edge (no wall round it, so it isn't all indoors and the weather
+      // shows); underground and indoors, the edge is rock or the outside
+      const kind = m.kind || ISO_KIND[m.biome] || 'out';
+      const land = (x, y) => x >= 0 && y >= 0 && x < W && y < H ? t[y * W + x] > 0 : kind === 'out';
+      // indoors (table/iso/iso-core.js): per cell, bit 1 a wall on its W edge (towards x - 1), 2 on its N edge, 4 and 8 a door in them
+      const e = Buffer.from(m.edge || '', 'base64'), eb = (x, y) => x >= 0 && y >= 0 && x < W && y < H ? e[y * W + x] || 0 : 0;
+      const doors = [];
+      const C = (x, y) => [g.ox + (x - y) * hw, g.oy + (x + y) * hh];
+      // each edge from its upper end down; then runs along one line joined into one wall
+      const edges = new Map();   // "x,y,dir" of the upper end -> lower end
+      const add = (a, b) => { if (a[1] > b[1]) [a, b] = [b, a]; edges.set(a[0] + ',' + a[1] + ',' + Math.sign(b[0] - a[0]), b); };
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        if (!land(x, y)) continue;
+        const [cx, cy] = C(x, y), N = [cx, cy - hh], E = [cx + hw, cy], S = [cx, cy + hh], Wp = [cx - hw, cy];
+        const q = eb(x, y), qe = eb(x + 1, y), qs = eb(x, y + 1);
+        // round the outside, and between rooms; a door in an edge is a door (it keeps whether it was open)
+        const side = (out, wall, door, a, b, key) => { if (door) doors.push([a, b, key]); else if (out || wall) add(a, b); };
+        side(!land(x + 1, y), false, !land(x + 1, y) && qe & 4, E, S, (x + 1) + ',' + y + ',W');
+        side(!land(x, y + 1), false, !land(x, y + 1) && qs & 8, S, Wp, x + ',' + (y + 1) + ',N');
+        side(!land(x - 1, y), land(x - 1, y) && q & 1, q & 4, Wp, N, x + ',' + y + ',W');
+        side(!land(x, y - 1), land(x, y - 1) && q & 2, q & 8, N, E, x + ',' + y + ',N');
+      }
+      const used = new Set(), out = [];
+      for (const [k, b0] of edges) {
+        if (used.has(k)) continue;
+        const [ax, ay, d] = k.split(',').map(Number);
+        // walk back to the start of the run, then forward to its end
+        let sx = ax, sy = ay; for (;;) { const pk = (sx - d * hw) + ',' + (sy - hh) + ',' + d; const p = edges.get(pk); if (!p || used.has(pk) || p[0] !== sx || p[1] !== sy) break; sx -= d * hw; sy -= hh; }
+        let ex = sx, ey = sy; for (;;) { const kk = ex + ',' + ey + ',' + d, b = edges.get(kk); if (!b || used.has(kk)) break; used.add(kk); ex = b[0]; ey = b[1]; }
+        out.push([[sx, sy], [ex, ey]]); void b0;
+      }
+      for (const [a, b] of out.slice(0, 4500)) { const w = cleanWall({ a, b }); w.src = 'iso'; s.walls.push(w); }
+      // houses: walls round each one's footprint that hide who's behind it, but not the ground (kind 'shade')
+      const P = (i, j) => [g.ox + (i - j) * hw, g.oy + (i + j) * hh];
+      for (const [x0, y0, x1, y1] of (m.houses || []).slice(0, 400)) {
+        const c = [P(x0 - .5, y0 - .5), P(x1 + .5, y0 - .5), P(x1 + .5, y1 + .5), P(x0 - .5, y1 + .5)];
+        for (let k = 0; k < 4; k++) { const w = cleanWall({ a: c[k], b: c[(k + 1) % 4], kind: 'shade' }); w.src = 'iso'; s.walls.push(w); }
+      }
+      for (const [a, b, key] of doors.slice(0, 1000)) {
+        const w = cleanWall({ a, b, kind: 'door', open: true }); w.src = 'iso'; w.door = 'iso:' + key;
+        const old = was.get(w.door); if (old) { w.id = old.id; w.open = old.open; w.locked = old.locked; }
+        s.walls.push(w);
+      }
+    }
+    this.syncIsoLights(s);
+    this.wallsChanged(s);
+  }
+  // a forge map's lights (src: 'iso'): its torches, lamps, candles, hearths and fires, and a glow at each house's front.
+  // Made again when the map changes; one the GM changed keeps its changes, one they deleted stays deleted (s.isoDark)
+  syncIsoLights(s) {
+    const was = new Map(s.lights.filter(l => l.src === 'iso' && l.key).map(l => [l.key, l]));
+    const dark = new Set(s.isoDark || []), kept = s.lights.filter(l => l.src !== 'iso'), m = s.iso, g = s.grid;
+    if (m && m.w && g && g.type === 'iso') {
+      const hw = g.size / 2, hh = g.size / 4, room = Math.max(0, 500 - kept.length), keys = new Set();
+      for (const [x, y, k] of (m.lights || []).slice(0, Math.min(300, room))) {
+        const key = 'iso:' + x + ',' + y + ',' + k; keys.add(key); if (dark.has(key)) continue;
+        const px = g.ox + (x - y) * hw, py = g.oy + (x + y) * hh, old = was.get(key);
+        const l = old ? Object.assign({}, old, { x: px, y: py }) : cleanLight(Object.assign({ x: px, y: py }, Object.hasOwn(ISO_LIGHTS, k) ? ISO_LIGHTS[k] : ISO_LIGHTS.torch));
+        l.src = 'iso'; l.key = key; kept.push(l);
+      }
+      if (s.isoDark) s.isoDark = s.isoDark.filter(key => keys.has(key));
+    }
+    s.lights = kept;
+  }
   syncPlanWalls(s) {
     const was = new Map(s.walls.filter(w => w.src === 'plan' && w.door).map(w => [w.door, w]));
     s.walls = s.walls.filter(w => w.src !== 'plan');

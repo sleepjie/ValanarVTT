@@ -266,6 +266,7 @@ window.ValanarMapTools = function (ctx) {
 
   // ───────────────────────── water names ─────────────────────────
   const LKINDS = {
+    country: { label: 'Country or realm', size: 420, spacing: 0.3, caps: true, italic: false, color: '#2a1d12', opacity: 0.85, zoom: [-9, NATIVE - 1.5] },
     ocean: { label: 'Ocean', size: 640, spacing: 0.38, caps: true, italic: false, color: '#1d3c42', opacity: 0.6, zoom: [-9, NATIVE - 3] },
     sea: { label: 'Sea', size: 400, spacing: 0.3, caps: true, italic: false, color: '#1d3c42', opacity: 0.64, zoom: [-9, NATIVE - 2.5] },
     bay: { label: 'Bay or gulf', size: 280, spacing: 0.18, caps: false, italic: true, color: '#1d3c42', opacity: 0.75, zoom: [NATIVE - 5, NATIVE + 1] },
@@ -313,8 +314,12 @@ window.ValanarMapTools = function (ctx) {
     const sp = smooth(pts, 14);
     return 'M' + sp.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L') + (close ? 'Z' : '');
   };
+  // a curve's length worked out here (the same line the path draws), not asked of the page, which lays it out first
+  const polyLen = pts => { let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return L; };
   let drawT = 0;
   function drawNames() { if (!drawT) drawT = requestAnimationFrame(() => { drawT = 0; renderNames(); }); }
+  const textW = new Map();   // a name's width per pixel of font size, by lettering and text
+  if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => { textW.clear(); drawNames(); });   // (a web font arriving changes them)
   function renderNames() {
     if (animZoom) return;
     const tl = map.containerPointToLayerPoint([0, 0]), sz = map.getSize();
@@ -326,7 +331,7 @@ window.ValanarMapTools = function (ctx) {
     const lk = look(), fontStack = lk.labels.font || getComputedStyle(document.documentElement).getPropertyValue('--serif') || 'Georgia, serif';
     const toScr = p => { const c = map.latLngToContainerPoint(toLatLng(p[0], p[1])); return [c.x, c.y]; };
     const defs = document.createElementNS(SVGNS, 'defs'); svg.append(defs);
-    let n = 0;
+    let n = 0; const fit = [];
     const put = (pts, text, o) => {
       if (!text || pts.length < 2) return null;
       let sp = pts.map(toScr);
@@ -343,17 +348,9 @@ window.ValanarMapTools = function (ctx) {
       tp.setAttribute('startOffset', '50%'); tp.setAttribute('text-anchor', 'middle');
       tp.textContent = o.caps ? text.toUpperCase() : text;
       t.append(tp); svg.append(t);
-      // a name longer than its curve would be cut off: carry the curve on past both ends until it fits
-      try {
-        const need = t.getComputedTextLength(), have = path.getTotalLength();
-        if (need > have * 0.96) {
-          const ext = (need - have * 0.96) / 2 + o.size * 0.6;
-          const a = sp[0], a2 = sp[1], b = sp[sp.length - 1], b2 = sp[sp.length - 2];
-          const da = Math.hypot(a[0] - a2[0], a[1] - a2[1]) || 1, db = Math.hypot(b[0] - b2[0], b[1] - b2[1]) || 1;
-          const sp2 = [[a[0] + (a[0] - a2[0]) / da * ext, a[1] + (a[1] - a2[1]) / da * ext], ...sp, [b[0] + (b[0] - b2[0]) / db * ext, b[1] + (b[1] - b2[1]) / db * ext]];
-          path.setAttribute('d', curveD(sp2));
-        }
-      } catch (e) { /* not laid out */ }
+      // a name longer than its curve would be cut off: carried on past both ends until it fits (worked out below, for
+      // all the names at once: reading a length lays the page out, and doing it between names did that for every one)
+      fit.push({ path, sp, t, o, wk: (o.font || fontStack) + '|' + (o.weight || 600) + '|' + (o.italic ? 1 : 0) + '|' + o.spacing + '|' + tp.textContent });
       return t;
     };
     for (const lb of labels()) {
@@ -362,7 +359,7 @@ window.ValanarMapTools = function (ctx) {
       const visible = size >= 7 && size <= 130 && z >= zr[0] && z <= zr[1];   // too small or too big to read: not shown
       if (!visible && !(editing && picked(lb.id))) continue;
       const t = put(lb.pts, lb.text, { size: clamp(size, 7, 130), spacing: num(lval(lb, 'spacing'), 0.2), italic: !!lval(lb, 'italic'), caps: !!lval(lb, 'caps'),
-        color: lval(lb, 'color'), opacity: num(lval(lb, 'opacity'), 0.8) * (visible ? 1 : 0.4), halo: lval(lb, 'halo') === false || look().labels.halo === false ? null : '#f2ecd9', haloOpacity: 0.35, weight: lb.kind === 'ocean' || lb.kind === 'sea' ? 500 : 600,
+        color: lval(lb, 'color'), opacity: num(lval(lb, 'opacity'), 0.8) * (visible ? 1 : 0.4), halo: lval(lb, 'halo') === false || look().labels.halo === false ? null : lval(lb, 'halo') === 'dark' ? '#14100a' : '#f2ecd9', haloOpacity: lval(lb, 'halo') === 'dark' ? 0.7 : 0.35, weight: lb.kind === 'ocean' || lb.kind === 'sea' ? 500 : 600,
         cls: (editing ? 'edit' : '') + (picked(lb.id) && editing ? ' sel' : '') });
       if (t && editing) {
         t.addEventListener('click', e => { e.stopPropagation(); if (mode) return mapClick(map.mouseEventToLatLng(e)); pickName(lb.id, e.ctrlKey || e.metaKey); selRoute = null; if (lb.kind === 'river') { riverSel = riverOfLabel(lb.id); showHi(); } ctx.openPanel('names', true); ctx.renderPanel(); drawRoutes(); });
@@ -377,6 +374,21 @@ window.ValanarMapTools = function (ctx) {
       put(routePath(r).length > 2 ? routePath(r).filter((_, i, a) => i % 4 === 0 || i === a.length - 1) : r.pts, r.name,
         { size: fs, spacing: 0.08, italic: true, caps: false, color: '#f6f1e2', opacity: 0.95, halo: '#14202a', haloOpacity: 0.65, dy: -Math.round(fs * 0.55), weight: 600 });
     }
+    // every name's width (remembered per lettering) and its curve's length, all read in one go; then the short curves lengthened
+    try {
+      const got = fit.map(f => {
+        let per = textW.get(f.wk);
+        if (per == null) { per = f.t.getComputedTextLength() / f.o.size; if (per > 0) textW.set(f.wk, per); }
+        return [per * f.o.size, polyLen(f.sp.length < 3 ? f.sp : smooth(f.sp, 14))];
+      });
+      fit.forEach((f, i) => {
+        const [need, have] = got[i]; if (!(need > have * 0.96)) return;
+        const sp = f.sp, ext = (need - have * 0.96) / 2 + f.o.size * 0.6;
+        const a = sp[0], a2 = sp[1], b = sp[sp.length - 1], b2 = sp[sp.length - 2];
+        const da = Math.hypot(a[0] - a2[0], a[1] - a2[1]) || 1, db = Math.hypot(b[0] - b2[0], b[1] - b2[1]) || 1;
+        f.path.setAttribute('d', curveD([[a[0] + (a[0] - a2[0]) / da * ext, a[1] + (a[1] - a2[1]) / da * ext], ...sp, [b[0] + (b[0] - b2[0]) / db * ext, b[1] + (b[1] - b2[1]) / db * ext]]));
+      });
+    } catch (e) { /* not laid out */ }
     // the line being drawn
     if (draft && draft.pts.length) {
       const pts = draft.pts.concat(draft.cursor ? [draft.cursor] : []).map(toScr);
@@ -884,7 +896,9 @@ window.ValanarMapTools = function (ctx) {
       h('input', { type: 'range', min: 0, max: 1.5, step: 0.02, value: num(K.spacing, 0.2), oninput: e => live('spacing', +e.target.value), onchange: e => done('spacing', +e.target.value) }),
       h('label', null, 'Strength'),
       h('input', { type: 'range', min: 0.2, max: 1, step: 0.05, value: num(K.opacity, 0.8), oninput: e => live('opacity', +e.target.value), onchange: e => done('opacity', +e.target.value) }),
-      h('div', null, tick('caps', 'Capitals'), tick('italic', 'Italic'), tick('halo', 'Soft halo')),
+      h('div', { class: 'row', style: 'align-items:center' }, h('div', null, tick('caps', 'Capitals'), tick('italic', 'Italic')),
+        h('div', null, h('label', null, 'Halo'), h('select', { onchange: e => setK('halo', e.target.value === 'dark' ? 'dark' : e.target.value === 'none' ? false : true) },
+          h('option', { value: 'soft', selected: K.halo !== false && K.halo !== 'dark' || null }, 'Soft, pale'), h('option', { value: 'dark', selected: K.halo === 'dark' || null }, 'Dark (for pale letters)'), h('option', { value: 'none', selected: K.halo === false || null }, 'None')))),
       h('div', { class: 'row' },
         h('div', null, h('label', null, 'Shows from zoom'), h('input', { type: 'number', step: 0.25, value: Math.max(0, K.zoom[0]), onchange: e => setK('minZoom', e.target.value === '' ? LKINDS[k].zoom[0] : +e.target.value) })),
         h('div', null, h('label', null, 'Hides after zoom'), h('input', { type: 'number', step: 0.25, value: K.zoom[1], onchange: e => setK('maxZoom', e.target.value === '' ? LKINDS[k].zoom[1] : +e.target.value) }))),
@@ -981,6 +995,15 @@ window.ValanarMapTools = function (ctx) {
       labels().length ? h('div', { class: 'nlist' }, ...labels().slice().sort((a, b) => num(lval(b, 'size'), 0) - num(lval(a, 'size'), 0)).map(x => h('div', { class: 'nrow' + (picked(x.id) ? ' on' : ''), style: 'cursor:pointer', 'data-lid': x.id,
         onclick: e => { if (e.ctrlKey || e.metaKey) { pickName(x.id, true); selRoute = null; ctx.renderPanel(); drawRoutes(); return; } pickName(x.id, false); selRoute = null; ctx.renderPanel(); drawRoutes(); const c = x.pts[Math.floor(x.pts.length / 2)]; map.setView(toLatLng(c[0], c[1]), clamp(Math.max(lkind(x).zoom[0], map.getZoom()), map.getMinZoom(), lkind(x).zoom[1])); } },
         h('span', { class: 'rnm', style: 'flex:1;font-style:italic' }, x.text), h('span', { class: 'cnt' }, lkind(x).label)))) : h('p', { class: 'small muted' }, 'No names yet.'));
+    // country names (and other name-only places) still kept as places: one click makes them map names like these
+    if (ctx.textPlaces) {
+      const tp = ctx.textPlaces(), byType = new Map();
+      for (const m of tp) { const t = ctx.typeOf(m); if (!byType.has(t.id)) byType.set(t.id, { t, list: [] }); byType.get(t.id).list.push(m); }
+      if (byType.size) body.unshift(h('div', { class: 'rivsel' },
+        h('p', { class: 'small', style: 'margin-top:0' }, 'These are still kept as places, so they don’t bend along points or follow the defaults here. Make them map names (each keeps its spot, curve and size; Ctrl+Z puts them back):'),
+        h('div', { class: 'btnrow' }, ...[...byType.values()].sort((a, b) => (b.t.id === 'country') - (a.t.id === 'country')).map(({ t, list }) =>
+          h('button', { class: 'btn sm' + (t.id === 'country' ? ' primary' : ''), onclick: () => ctx.textToNames(list) }, `${t.label}s (${list.length})`)))));
+    }
     body.push(...riverPanel());
     return ctx.panelShell('Names on the map', h('div', { class: 'form' }, ...body));
   }
@@ -1018,6 +1041,21 @@ window.ValanarMapTools = function (ctx) {
       h('div', { class: 'row' }, colour('sea', 'shallow', 'Shallows'), colour('sea', 'mid', 'Open water'), colour('sea', 'deep', 'Deep water')),
       slider('sea', 'waves', 'Swell', 0, 2, 0.05, times), slider('sea', 'speed', 'Movement', 0, 2.5, 0.05, v => v ? times(v) : 'still'),
       h('div', null, tick('sea', 'ripples', 'Ripples along the shore'), tick('sea', 'foam', 'Surf'), tick('sea', 'glints', 'Glints')),
+      ctx.canEdit && ctx.editMode() && ctx.setShelfBrush ? (() => {
+        const br = ctx.shelfBrush(), on = m => br && br.mode === m;
+        const pick = m => ctx.setShelfBrush(on(m) ? null : { mode: m });
+        const sl = (key, label, min, max, step, val) => h('div', { class: 'sl' }, h('label', null, label), h('input', { type: 'range', min, max, step, value: val,
+          oninput: e => { if (br) ctx.setShelfBrush({ [key]: +e.target.value }, true); } }));
+        return h('div', { class: 'shelfbox' },
+          h('label', null, 'How far out the shallows reach'),
+          h('p', { class: 'small muted', style: 'margin:2px 0 6px' }, 'Pick a brush and drag over the sea along a coast: further out for a broad shelf or sandbanks, shorter for cliffs straight into the deep. Everyone sees it. Esc stops; Ctrl+Z undoes a stroke.'),
+          h('div', { class: 'btnrow', style: 'margin-top:0' },
+            h('button', { class: 'btn sm' + (on('wider') ? ' primary' : ''), onclick: () => pick('wider') }, 'Further out'),
+            h('button', { class: 'btn sm' + (on('shorter') ? ' primary' : ''), onclick: () => pick('shorter') }, 'Shorter'),
+            h('button', { class: 'btn sm' + (on('normal') ? ' primary' : ''), onclick: () => pick('normal') }, 'Back to usual'),
+            ctx.shelfPainted() ? h('button', { class: 'btn sm', onclick: () => { if (confirm('Clear all the painted shallows?')) ctx.clearShelf(); } }, 'Clear all') : null),
+          br ? h('div', { class: 'row' }, sl('size', 'Brush size', 150, 3000, 50, br.size), sl('strength', 'Strength', 0.1, 1.5, 0.05, br.strength)) : null);
+      })() : null,
       h('div', { class: 'btnrow', style: 'margin-top:6px' }, h('button', { class: 'btn sm', onclick: () => resetSec('sea') }, 'Default sea')),
       h('h2', null, 'Rivers and lakes'),
       ctx.canEdit ? h('label', { class: 'inline' }, h('input', { type: 'checkbox', checked: s.freshwater !== false || null, onchange: e => { ctx.change(() => { D().settings.freshwater = e.target.checked; }, { panel: false }); toast('Reload the page to see the change.'); } }), 'Find rivers and lakes in the map’s transparency (for everyone)') : null,
@@ -1067,5 +1105,5 @@ window.ValanarMapTools = function (ctx) {
 
   applyLook();
   drawRoutes();
-  return { seaPath: (a, b) => plotSea(a, b, true), selectName: id => { selSet.clear(); selLabel = id; selRoute = null; ctx.openPanel('names', true); drawRoutes(); drawNames(); }, sync, applyLook, panel, busy, look, clickAt: (ll, place) => mapClick(ll, place), distText, unit, panelClosed, landChanged: () => { seaGrid = null; }, setRivers, rivers: () => net };
+  return { seaPath: (a, b) => plotSea(a, b, true), selectName: id => { selSet.clear(); selLabel = id; selRoute = null; ctx.openPanel('names', true); drawRoutes(); drawNames(); }, sync, applyLook, panel, busy, look, clickAt: (ll, place) => mapClick(ll, place), distText, unit, panelClosed, landChanged: () => { seaGrid = null; }, setRivers, rivers: () => net, nameKind };
 };

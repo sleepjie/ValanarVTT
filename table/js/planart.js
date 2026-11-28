@@ -60,14 +60,33 @@ function naturalBase(P) {
 
 const texCache = { key: '', tex: null };
 function maxSide() { try { const gl = V.stage.app.renderer.gl; return Math.min(8192, gl.getParameter(gl.MAX_TEXTURE_SIZE)); } catch (e) { return 4096; } }
+// the season a plan is drawn in: its own, or (style.season 'clock') the world clock's: the time of year from the date,
+// snow on the ground while it snows
+V.planSeason = function (st) {
+  const s = st && st.season;
+  if (s !== 'clock') return s || 'summer';
+  const c = state.calendar, Cal = window.WorldCalendar; if (!c || !c.cal || !Cal) return 'summer';
+  const d = Cal.date(c.cal, c.t), yd = Cal.yearDays(c.cal) || 365, mid = c.cal.sun && isFinite(c.cal.sun.summer) ? (c.cal.sun.summer + 0.5) / yd : null;
+  return Plan.seasonAt((d.doy + 0.5) / yd, c.weather && c.weather.kind, mid);
+};
+let clockSeason = null;
+V.on('time', () => {
+  const p = state.scene && state.scene.meta && state.scene.meta.plan;
+  if (!p || !p.style || p.style.season !== 'clock') return;
+  const now = V.planSeason(p.style);
+  if (clockSeason !== null && now !== clockSeason && V.redrawMap) V.redrawMap();
+  clockSeason = now;
+});
 V.drawPlan = function (root, plan, c, o) {
   const P = plan.grid ? plan : Plan.unpack(plan);
+  o = Object.assign({}, o, { season: (o && o.season) || V.planSeason(P.style) });
   if (P.style.render === 'painted' && texReady) drawPainted(root, P, c, o); else drawInk(root, P, c, o);
 };
 V.planTexture = function (plan, g, opts) {
   const app = V.stage && V.stage.app; if (!app || !plan) return null;
   if (!texReady) { loadTextures().then(() => V.redrawMap && V.redrawMap()); if (plan.style && plan.style.render === 'painted') return null; }
-  const gm = V.isGM(), key = JSON.stringify([plan, g.size, g.ox, g.oy, gm, !!(opts && opts.fast), texReady]);
+  const sea = V.planSeason(plan.style); if (plan.style && plan.style.season === 'clock') clockSeason = sea;
+  const gm = V.isGM(), key = JSON.stringify([plan, g.size, g.ox, g.oy, gm, !!(opts && opts.fast), texReady, sea]);
   if (texCache.key === key && texCache.tex) return texCache.tex;
   const c = g.size, w = plan.cols * c + (g.ox || 0), hh = plan.rows * c + (g.oy || 0);
   const root = new PIXI.Container();
@@ -204,6 +223,7 @@ V.planFeatCanvas = function (k, c) {
   const app = V.stage && V.stage.app, def = Plan.FEATS.find(f => f[0] === k); if (!app || !def || !texReady) return null;
   const S = Math.max(def[2], def[3]) + 1, root = new PIXI.Container(), gsh = new PIXI.Graphics(); root.addChild(gsh);
   const f = { k, x: Math.floor((S - def[2]) / 2), y: Math.floor((S - def[3]) / 2), w: def[2], h: def[3], r: 0 };
+  SEA = 'summer'; OUTD = () => true;
   root.addChild(drawFeatPainted(f, c, Object.assign({}, Plan.STYLE), Plan.rng(k), gsh));
   const tex = app.renderer.generateTexture(root, { region: new PIXI.Rectangle(0, 0, S * c, S * c), resolution: 1, multisample: PIXI.MSAA_QUALITY.HIGH });
   const cv = app.renderer.extract.canvas(tex); root.destroy({ children: true }); tex.destroy(true);
@@ -229,6 +249,7 @@ V.planFeatThumb = function (k, render) {
 // ───────────────────────── ink ─────────────────────────
 function drawInk(root, P, c, o) {
   const st = P.style, ink = hex(st.ink), R = Plan.rng(P.seed || 'plan');
+  SEA = o.season || 'summer'; OUTD = () => true;
   const off = new PIXI.Container(); off.position.set(o.ox, o.oy); root.addChild(off);
   const at = (x, y) => Plan.at(P, x, y), open = (x, y) => at(x, y) !== Plan.ROCK;
   // the paper
@@ -311,12 +332,14 @@ function drawInk(root, P, c, o) {
   }
   { const shape = floorShape(P, c); off.addChild(shape); fl.mask = shape; }
   // furniture and fittings
-  for (const f of P.feats) off.addChild(drawFeatInk(f, c, st, R));
+  for (const f of P.feats) if (f.k !== 'roof') off.addChild(drawFeatInk(f, c, st, R));
   // walls: thick ink along every edge between floor and rock
   const gwall = new PIXI.Graphics(); off.addChild(gwall);
   const lw = Math.max(2, c * 0.13);
   gwall.lineStyle({ width: lw, color: ink, cap: PIXI.LINE_CAP.SQUARE, join: PIXI.LINE_JOIN.MITER });
   strokeChains(gwall, chains);
+  // roofs, over the walls
+  for (const f of P.feats) if (f.k === 'roof') off.addChild(drawFeatInk(f, c, st, R));
   // doors
   for (const d of P.doors) off.addChild(drawDoorInk(d, c, st, o.gm));
   // room numbers
@@ -427,11 +450,45 @@ function drawFeatInk(f, c, st, R) {
     case 'campfire': for (let k = 0; k < 7; k++) { const a = k / 7 * Math.PI * 2; circ(Math.cos(a) * c * 0.28, Math.sin(a) * c * 0.28, c * 0.07, shade); } g.lineStyle(0).beginFill(0xe08a3a).drawCircle(0, 0, c * 0.15).endFill(); break;
     case 'cart': box(-W * 0.4, -H * 0.38, W * 0.8, H * 0.76, shade); box(-W * 0.48, -H * 0.2, W * 0.08, H * 0.24, ink); box(W * 0.4, -H * 0.2, W * 0.08, H * 0.24, ink); line(); g.moveTo(0, -H * 0.38).lineTo(0, -H * 0.5); break;
     case 'haybale': box(-c * 0.36, -c * 0.3, c * 0.72, c * 0.6, 0xefe2b0); line(0.6); g.moveTo(-c * 0.12, -c * 0.3).lineTo(-c * 0.12, c * 0.3).moveTo(c * 0.12, -c * 0.3).lineTo(c * 0.12, c * 0.3); break;
+    case 'pine': { line(0.9); const pts = []; for (let k = 0; k < 22; k++) { const a = k / 22 * Math.PI * 2, r = Math.min(W, H) * (k % 2 ? 0.28 : 0.46); pts.push(Math.cos(a) * r, Math.sin(a) * r); } g.beginFill(SEA === 'snow' ? 0xffffff : 0xdde5cf).drawPolygon(pts).endFill(); g.beginFill(ink).drawCircle(0, 0, c * 0.05).endFill(); break; }
+    case 'stump': circ(0, 0, c * 0.25, shade); line(0.6, lw * 0.6); g.drawCircle(0, 0, c * 0.14); break;
+    case 'reeds': line(0.8, lw * 0.6); for (let k = 0; k < 8; k++) { const x = (R() - 0.5) * c * 0.6, y = (R() - 0.5) * c * 0.5; g.moveTo(x, y + c * 0.12).lineTo(x + (R() - 0.5) * c * 0.1, y - c * 0.12); } break;
+    case 'flowers': if (SEA !== 'winter' && SEA !== 'snow') { line(0.7, lw * 0.6); for (let k = 0; k < 6; k++) g.drawCircle((R() - 0.5) * c * 0.7, (R() - 0.5) * c * 0.7, c * 0.04); } break;
+    case 'fence': line(); g.moveTo(-c * 0.5, -c * 0.44).lineTo(c * 0.5, -c * 0.44); circ(-c * 0.44, -c * 0.44, c * 0.05, ink); circ(c * 0.44, -c * 0.44, c * 0.05, ink); break;
+    case 'parapet': box(-c * 0.5, -c * 0.5, c, c * 0.24, shade); break;
+    case 'signpost': line(); g.moveTo(-c * 0.32, -c * 0.1).lineTo(c * 0.32, c * 0.1).moveTo(-c * 0.1, c * 0.3).lineTo(c * 0.1, -c * 0.3); circ(0, 0, c * 0.06, ink); break;
+    case 'streetlamp': circ(0, 0, c * 0.14); circ(0, 0, c * 0.05, ink); break;
+    case 'stall': box(-W * 0.46, -H * 0.46, W * 0.92, H * 0.58, shade); line(0.6, lw * 0.6); for (let x = -W * 0.46 + W * 0.92 / 6; x < W * 0.45; x += W * 0.92 / 6) g.moveTo(x, -H * 0.46).lineTo(x, H * 0.12); box(-W * 0.42, H * 0.16, W * 0.84, H * 0.22); break;
+    case 'woodpile': box(-W * 0.45, -H * 0.32, W * 0.9, H * 0.64, shade); line(0.6, lw * 0.6); for (let k = 0; k < 5; k++) g.drawCircle(-W * 0.34 + k * W * 0.17, 0, c * 0.08); break;
+    case 'grave': line(0.7); g.beginFill(shade).drawEllipse(0, H * 0.08, W * 0.28, H * 0.26).endFill(); box(-W * 0.34, -H * 0.44, W * 0.68, H * 0.14); break;
+    case 'roof': {   // a roof: drawn over the walls, its ridge and the shaded slope hatched
+      const e = c * 0.1, x0 = -W / 2 - e, y0 = -H / 2 - e, w2 = W + 2 * e, h2 = H + 2 * e, along = f.w > f.h || (f.w === f.h && f.r % 2 === 0);
+      line(1, lw * 1.4); g.beginFill(SEA === 'snow' ? 0xffffff : 0xf0e8d8).drawRect(x0, y0, w2, h2).endFill();
+      line(0.9); if (along) g.moveTo(x0, 0).lineTo(x0 + w2, 0); else g.moveTo(0, y0).lineTo(0, y0 + h2);
+      if (along) hatchRect(x0, 0, w2, h2 / 2, c * 0.16); else hatchRect(0, y0, w2 / 2, h2, c * 0.16);
+      break;
+    }
     default: box(-W * 0.4, -H * 0.4, W * 0.8, H * 0.8, shade);
   }
   return g;
 }
 
+
+// ───────────────────────── the seasons ─────────────────────────
+// SEA: the season of the plan being drawn (spring, summer, autumn, winter, snow); OUTD(x, y): whether a square is out in
+// the open (floor joined to the map's edge without going through a door or window: a building's rooms aren't), so
+// the snow and the fallen leaves stay outdoors
+let SEA = 'summer', OUTD = () => true;
+function outdoorTest(P) {
+  const { id, list } = Plan.regions(P), out = new Uint8Array(list.length);
+  list.forEach((cells, r) => { for (const i of cells) { const x = i % P.cols, y = (i / P.cols) | 0; if (x === 0 || y === 0 || x === P.cols - 1 || y === P.rows - 1) { out[r] = 1; break; } } });
+  return (x, y) => { if (x < 0 || y < 0 || x >= P.cols || y >= P.rows) return true; const r = id[y * P.cols + x]; return r < 0 ? true : !!out[r]; };
+}
+// the ground's colour through the year: fresh in spring, dry and gold in autumn, dull in winter
+const SEASON_TINT = { grass: { spring: 0xeaf8cc, autumn: 0xe8d29a, winter: 0xc8c6ae, snow: 0xc8c6ae }, earth: { spring: 0xdcd2bc, autumn: 0xe2c49e, winter: 0xc6bcae, snow: 0xc6bcae },
+  dirt: { winter: 0xb8ae9e, snow: 0xb8ae9e }, mossy: { autumn: 0xd8d0b8, winter: 0xc8c8c0 } };
+const seasonLook = (m, L) => { const t = SEASON_TINT[m] && SEASON_TINT[m][SEA]; return t != null && L ? [L[0], L[1], t] : L; };
+const SNOW_FULL = new Set(['grass', 'earth', 'sand', 'snow']), SNOW_PART = new Set(['dirt', 'gravel', 'cobble', 'flagstone', 'mossy', 'planks', 'oldplanks', 'cave', 'marble', 'tiles']);
 
 // ───────────────────────── painted: photo textures (ambientCG, CC0), shaded walls, props with shadows ─────────────────────────
 // [texture, squares one repeat covers, tint]
@@ -455,28 +512,56 @@ function texFill(g, look, c, opts) {
 }
 function drawPainted(root, P, c, o) {
   const st = P.style, R = Plan.rng(P.seed || 'plan');
+  SEA = o.season || 'summer'; OUTD = SEA === 'summer' ? () => true : outdoorTest(P);
+  const SNOW = SEA === 'snow';
   const off = new PIXI.Container(); off.position.set(o.ox, o.oy); root.addChild(off);
   const at = (x, y) => Plan.at(P, x, y), open = (x, y) => at(x, y) !== Plan.ROCK;
   const W = P.cols * c, H = P.rows * c;
   const matOf = v => { const m = Plan.MATS[v][0]; return m === 'floor' ? st.floorMat : m; };
   // outside the walls: the rock (or the ground round a building)
   const gout = new PIXI.Graphics(); off.addChild(gout);
-  const ol = OUTLOOK[st.outside];
+  const ol = seasonLook(st.outside, OUTLOOK[st.outside]);
   if (ol) texFill(gout, ol, c); else gout.beginFill(0x0c0b0a);
   gout.drawRect(-o.ox, -o.oy, W + o.ox, H + o.oy).endFill();
+  if (SNOW && SNOW_FULL.has(st.outside === 'dirt' ? 'grass' : st.outside)) { texFill(gout, ['snow', 4, 0xffffff], c, { alpha: 0.96 }); gout.drawRect(-o.ox, -o.oy, W + o.ox, H + o.oy).endFill(); }
   if (st.outside === 'rock') gout.beginFill(0x000000, 0.35).drawRect(-o.ox, -o.oy, W + o.ox, H + o.oy).endFill();
   // the floors, each material its own texture (offset a little per material, so neighbours don't line up)
   const present = new Set(P.grid);
   const fl = new PIXI.Container(); off.addChild(fl);   // everything on the floor, under the floor's outline
   const gf = new PIXI.Graphics(); fl.addChild(gf);
-  { const nb = naturalBase(P); if (nb != null) { const m = matOf(nb); if (MATLOOK[m]) { texFill(gf, MATLOOK[m], c, { tx: (nb * 137) % 512, ty: (nb * 89) % 512 }); gf.drawRect(0, 0, W, H); gf.endFill(); } else if (m === 'water') gf.beginFill(0x24525a).drawRect(0, 0, W, H).endFill(); } }
+  { const nb = naturalBase(P); if (nb != null) { const m = matOf(nb); if (MATLOOK[m]) { texFill(gf, seasonLook(m, MATLOOK[m]), c, { tx: (nb * 137) % 512, ty: (nb * 89) % 512 }); gf.drawRect(0, 0, W, H); gf.endFill(); } else if (m === 'water') gf.beginFill(0x24525a).drawRect(0, 0, W, H).endFill(); } }
   for (const v of present) {
     if (v === Plan.ROCK) continue;
     const m = matOf(v);
     if (m === 'water' || m === 'lava' || m === 'chasm') continue;
+    // (the ground out in the open takes the season's colour; a building's floors stay as they are)
     texFill(gf, MATLOOK[m], c, { tx: (v * 137) % 512, ty: (v * 89) % 512 });
     runsOf(P, v, (x, y, n) => gf.drawRect(x * c, y * c, n * c, c));
     gf.endFill();
+    const sl = seasonLook(m, MATLOOK[m]);
+    if (sl !== MATLOOK[m]) { texFill(gf, sl, c, { tx: (v * 137) % 512, ty: (v * 89) % 512 }); for (let y = 0; y < P.rows; y++) for (let x = 0; x < P.cols; x++) if (P.grid[y * P.cols + x] === v && OUTD(x, y)) gf.drawRect(x * c, y * c, c, c); }
+    gf.endFill();
+  }
+  // soft edges between natural grounds (grass, forest floor, a dirt road, sand): each reaches into the other in an
+  // uneven line, not along the squares
+  if (!o.fast) {
+    const soft = v => { if (v === Plan.ROCK) return null; const m = matOf(v); return MATLOOK[m] && Plan.NATURAL.has(m) ? m : null; };
+    const blobs = new Map();
+    for (let y = 0; y < P.rows; y++) for (let x = 0; x < P.cols; x++) {
+      const v = P.grid[y * P.cols + x], m = soft(v); if (!m) continue;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= P.cols || ny >= P.rows) continue;
+        const v2 = P.grid[ny * P.cols + nx]; if (v2 === v || !soft(v2)) continue;
+        if (!blobs.has(v)) blobs.set(v, []);
+        for (let k = 0; k < 2; k++) {
+          const t = 0.15 + R() * 0.7, push = R() * 0.22, ex = dx ? x + (dx > 0 ? 1 : 0) + dx * push : x + t, ey = dy ? y + (dy > 0 ? 1 : 0) + dy * push : y + t, rr = 0.2 + R() * 0.18, pts = [];
+          for (let q = 0; q < 8; q++) { const a = q / 8 * Math.PI * 2, d = rr * (0.7 + R() * 0.3); pts.push((ex + Math.cos(a) * d) * c, (ey + Math.sin(a) * d) * c); }
+          blobs.get(v).push(pts);
+        }
+      }
+    }
+    if (blobs.size) { const ge = new PIXI.Graphics(); fl.addChild(ge);
+      for (const [v, list] of blobs) { const m = matOf(v); texFill(ge, seasonLook(m, MATLOOK[m]), c, { tx: (v * 137) % 512, ty: (v * 89) % 512 }); for (const pts of list) ge.drawPolygon(pts); ge.endFill(); } }
   }
   // tone: a gentle unevenness so big rooms don't look like wallpaper
   if (!o.fast) {
@@ -533,6 +618,25 @@ function drawPainted(root, P, c, o) {
     // the drop: the floor's edge, then shading away into the dark
     for (const [d, col, a] of [[0.07, 0x4a4540, 0.9], [0.18, 0x2a2724, 0.7], [0.34, 0x161412, 0.6]]) { gc.beginFill(col, a); edgesOf(isV(Plan.MAT.chasm), notV(Plan.MAT.chasm), (x, y, s) => band(gc, x, y, s, d * c)); gc.endFill(); }
   }
+  // the season on the ground: fallen leaves, spring flowers, frost, snow
+  if (SEA !== 'summer') seasonGround(fl, P, c, R, o, matOf, open);
+  // the bank reaching into the water in an uneven line (a pond's edge, not the squares')
+  if (!o.fast && present.has(Plan.WATER)) {
+    const gb = new PIXI.Graphics(); fl.addChild(gb); const byMat = new Map();
+    for (let y = 0; y < P.rows; y++) for (let x = 0; x < P.cols; x++) {
+      if (at(x, y) !== Plan.WATER) continue;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const v = at(x + dx, y + dy); if (v === Plan.ROCK || v === Plan.WATER) continue; const m = matOf(v); if (!MATLOOK[m] || !Plan.NATURAL.has(m)) continue;
+        const key = SNOW && OUTD(x + dx, y + dy) && SNOW_FULL.has(m) ? 'snow' : v; if (!byMat.has(key)) byMat.set(key, []);
+        for (let k = 0; k < 3; k++) { const t = 0.1 + R() * 0.8, push = 0.05 + R() * 0.3, ex = dx ? x + (dx > 0 ? 1 : 0) - dx * push : x + t, ey = dy ? y + (dy > 0 ? 1 : 0) - dy * push : y + t, rr = 0.18 + R() * 0.2, pts = [];
+          for (let q = 0; q < 8; q++) { const a = q / 8 * Math.PI * 2, d = rr * (0.7 + R() * 0.3); pts.push((ex + Math.cos(a) * d) * c, (ey + Math.sin(a) * d) * c); }
+          byMat.get(key).push(pts); }
+      }
+    }
+    for (const [key, list] of byMat) { gb.lineStyle({ width: Math.max(1, c * 0.025), color: SNOW ? 0xc8d6e0 : 0x2a3a2a, alpha: 0.35 });
+      if (key === 'snow') texFill(gb, ['snow', 4, 0xffffff], c); else { const m = matOf(key); texFill(gb, OUTD(0, 0) ? seasonLook(m, MATLOOK[m]) : MATLOOK[m], c, { tx: (key * 137) % 512, ty: (key * 89) % 512 }); }
+      for (const pts of list) gb.drawPolygon(pts); gb.endFill(); }
+  }
   // the grid on the floor
   if (st.grid) {
     const gg = new PIXI.Graphics(); fl.addChild(gg);
@@ -562,8 +666,9 @@ function drawPainted(root, P, c, o) {
   { const shape = floorShape(P, c); off.addChild(shape); fl.mask = shape; }
   // furniture: shadows first (all of them, under everything), then the pieces
   const gsh = new PIXI.Graphics(); off.addChild(gsh);
+  if (SNOW) gsh.alpha = 0.45;
   const props = new PIXI.Container(); off.addChild(props);
-  for (const f of P.feats) { const p = drawFeatPainted(f, c, st, R, gsh); if (p) props.addChild(p); }
+  for (const f of P.feats) { if (f.k === 'roof') continue; const p = drawFeatPainted(f, c, st, R, gsh); if (p) props.addChild(p); }
   // walls: a dark rim, then the stone, with a lighter top edge
   const wl = WALLLOOK[st.wallMat] || WALLLOOK.stone;
   const gwall = new PIXI.Graphics(); off.addChild(gwall);
@@ -578,6 +683,8 @@ function drawPainted(root, P, c, o) {
   strokeChains(gwall, chains); for (const d of innerWalls) seg(...innerSeg(d));
   gwall.lineStyle({ width: wallW * 0.35, color: 0xffffff, alpha: 0.07, cap: PIXI.LINE_CAP.SQUARE, join: PIXI.LINE_JOIN.MITER });   // the wall's top catches the light
   strokeChains(gwall, chains); for (const d of innerWalls) seg(...innerSeg(d));
+  // roofs: over the walls (the eaves overhang them), under the doors
+  for (const f of P.feats) if (f.k === 'roof') off.addChild(drawRoofPainted(f, c, Plan.rng((P.seed || '') + f.x + ',' + f.y)));
   // doors
   for (const d of P.doors) { if (d.k === 'wall' || (d.k === 'secret' && !o.gm)) continue; off.addChild(drawDoorPainted(d, c, st, o.gm, wl)); }
   // room numbers (the GM's: players see the place, not the key)
@@ -585,6 +692,120 @@ function drawPainted(root, P, c, o) {
     const t = new PIXI.Text(l.n, { fontFamily: 'Palatino Linotype, Book Antiqua, Georgia, serif', fontWeight: '700', fontSize: Math.max(12, c * 0.55), fill: 0xfff6e0, stroke: 0x1a1410, strokeThickness: Math.max(3, c * 0.1) });
     t.anchor.set(0.5); t.alpha = 0.9; t.position.set(l.x * c, l.y * c); off.addChild(t);
   }
+}
+// the season on open ground: autumn's fallen leaves, spring's flowers, winter's frost, a fall of snow (thick on grass and
+// earth, trodden thin on roads and cobbles), ice on the water
+function seasonGround(fl, P, c, R, o, matOf, open) {
+  const g = new PIXI.Graphics(); fl.addChild(g);
+  const list = [];
+  for (let y = 0; y < P.rows; y++) for (let x = 0; x < P.cols; x++) if (open(x, y) && OUTD(x, y)) list.push([x, y, matOf(P.grid[y * P.cols + x])]);
+  const wet = m => m === 'water' || m === 'lava' || m === 'chasm';
+  const mOf = (x, y) => (x < 0 || y < 0 || x >= P.cols || y >= P.rows || !open(x, y)) ? null : matOf(P.grid[y * P.cols + x]);
+  const leafAt = (px, py, col, rr, a) => g.beginFill(col, 0.8).drawPolygon([px + Math.cos(a) * rr * 1.7, py + Math.sin(a) * rr * 1.7, px + Math.cos(a + 1.57) * rr * 0.7, py + Math.sin(a + 1.57) * rr * 0.7,
+    px - Math.cos(a) * rr * 1.7, py - Math.sin(a) * rr * 1.7, px - Math.cos(a + 1.57) * rr * 0.7, py - Math.sin(a + 1.57) * rr * 0.7]).endFill();
+  if (SEA === 'autumn') {
+    const cols = [0xc0601c, 0xd8962a, 0x9a3418, 0xb8862a, 0x7a4a1c, 0xe0b040];
+    for (const [x, y, m] of list) { if (wet(m) || o.fast) continue; const n = m === 'grass' || m === 'earth' ? 4 : 2; for (let k = 0; k < n; k++) if (R() < 0.45) leafAt((x + R()) * c, (y + R()) * c, cols[(R() * 6) | 0], c * (0.03 + R() * 0.025), R() * 3.1); }
+    // thicker under the trees
+    for (const f of P.feats) { if (f.k !== 'tree' && f.k !== 'bush') continue; const fw = f.r % 2 ? f.h : f.w, fh = f.r % 2 ? f.w : f.h, cx = (f.x + fw / 2) * c, cy = (f.y + fh / 2) * c, rr = Math.max(fw, fh) * c * 0.7;
+      for (let k = 0; k < (f.k === 'tree' ? 40 : 10); k++) { const a = R() * 6.28, d = Math.sqrt(R()) * rr, px = cx + Math.cos(a) * d, py = cy + Math.sin(a) * d, mx = Math.floor(px / c), my = Math.floor(py / c); const m = mOf(mx, my); if (!m || wet(m) || !OUTD(mx, my)) continue; leafAt(px, py, cols[(R() * 6) | 0], c * (0.03 + R() * 0.025), R() * 3.1); } }
+  } else if (SEA === 'spring') {
+    const cols = [0xffffff, 0xfff1a0, 0xf4b8d0, 0xc8b8f0, 0xfff8e0];
+    for (const [x, y, m] of list) { if (m !== 'grass' || R() > 0.3 || o.fast) continue; const cx = (x + 0.2 + R() * 0.6) * c, cy = (y + 0.2 + R() * 0.6) * c, col = cols[(R() * 5) | 0];
+      for (let k = 0; k < 3 + R() * 4; k++) g.beginFill(col, 0.9).drawCircle(cx + (R() - 0.5) * c * 0.4, cy + (R() - 0.5) * c * 0.4, c * (0.02 + R() * 0.015)).endFill(); }
+  } else if (SEA === 'winter') {
+    // frost: a rime on the grass, thin ice along the water's edge
+    for (const [x, y, m] of list) { if (wet(m) || o.fast) continue; const n = m === 'grass' || m === 'earth' ? 9 : 4; g.beginFill(0xf4f8fc, 0.2); for (let k = 0; k < n; k++) g.drawCircle((x + R()) * c, (y + R()) * c, c * (0.015 + R() * 0.02)); g.endFill(); }
+    g.beginFill(0xeef6fa, 0.35);
+    for (const [x, y, m] of list) { if (m !== 'water') continue; for (const [dx, dy, s] of [[0, -1, 0], [1, 0, 1], [0, 1, 2], [-1, 0, 3]]) { const n = mOf(x + dx, y + dy); if (n && n !== 'water') { const d = c * 0.22; if (s === 0) g.drawRect(x * c, y * c, c, d); else if (s === 1) g.drawRect((x + 1) * c - d, y * c, d, c); else if (s === 2) g.drawRect(x * c, (y + 1) * c - d, c, d); else g.drawRect(x * c, y * c, d, c); } } }
+    g.endFill();
+  } else if (SEA === 'snow') {
+    const SN = ['snow', 4, 0xffffff], full = (x, y) => { const m = mOf(x, y); return !!m && SNOW_FULL.has(m) && OUTD(x, y); };
+    // ice on the water, under the snow's edges
+    texFill(g, ['ice', 3, 0xe4f0f6], c, { alpha: 0.85 });
+    for (const [x, y, m] of list) if (m === 'water') g.drawRect(x * c, y * c, c, c);
+    g.endFill();
+    if (!o.fast) {
+      g.lineStyle({ width: Math.max(1, c * 0.015), color: 0x58808e, alpha: 0.4, cap: PIXI.LINE_CAP.ROUND });
+      for (const [x, y, m] of list) { if (m !== 'water' || R() > 0.35) continue; let px = (x + R()) * c, py = (y + R()) * c; g.moveTo(px, py); for (let k = 0; k < 3; k++) { px += (R() - 0.5) * c * 0.7; py += (R() - 0.5) * c * 0.7; g.lineTo(px, py); } }
+      g.lineStyle(0);
+    }
+    // the deep snow: grass, earth and sand under it
+    texFill(g, SN, c, { alpha: 0.97 });
+    for (let y = 0; y < P.rows; y++) { let s = -1; for (let x = 0; x <= P.cols; x++) { const on = x < P.cols && full(x, y); if (on && s < 0) s = x; if (!on && s >= 0) { g.drawRect(s * c, y * c, (x - s) * c, c); s = -1; } } }
+    g.endFill();
+    // roads, cobbles and boards: trodden, the snow lying in patches, thicker toward the drifts at their edges
+    if (!o.fast) for (const [x, y, m] of list) {
+      if (!SNOW_PART.has(m)) { if (m === 'water') { texFill(g, SN, c, { alpha: 0.35 }); for (let k = 0; k < 2; k++) if (R() < 0.5) g.drawCircle((x + R()) * c, (y + R()) * c, c * (0.15 + R() * 0.25)); g.endFill(); } continue; }
+      const nf = [[0, -1], [1, 0], [0, 1], [-1, 0]].filter(([dx, dy]) => full(x + dx, y + dy)).length;
+      const rag = (cx, cy, rr) => { const pts = []; for (let q = 0; q < 9; q++) { const a = q / 9 * Math.PI * 2, d = rr * (0.55 + R() * 0.45); pts.push(cx + Math.cos(a) * d, cy + Math.sin(a) * d); } return pts; };
+      texFill(g, SN, c, { alpha: 0.42 + nf * 0.08 }); g.drawRect(x * c, y * c, c, c); g.endFill();
+      texFill(g, SN, c, { alpha: 0.5 });
+      for (let k = 0; k < 1 + nf; k++) if (R() < 0.7) g.drawPolygon(rag((x + R()) * c, (y + R()) * c, c * (0.25 + R() * 0.3)));
+      g.endFill();
+      // a drift along the side that meets deep snow
+      texFill(g, SN, c, { alpha: 0.75 });
+      [[0, -1], [1, 0], [0, 1], [-1, 0]].forEach(([dx, dy], s) => { if (!full(x + dx, y + dy)) return; for (let k = 0; k < 3; k++) { const t = (k + 0.2 + R() * 0.6) / 3, e = c * (0.05 + R() * 0.12);
+        const px = s === 1 ? (x + 1) * c - e : s === 3 ? x * c + e : (x + t) * c, py = s === 0 ? y * c + e : s === 2 ? (y + 1) * c - e : (y + t) * c; g.drawCircle(px, py, c * (0.14 + R() * 0.12)); } });
+      g.endFill();
+    }
+    // the snow's surface: soft hollows in a cold blue, the odd glint
+    if (!o.fast) for (const [x, y] of list) { if (!full(x, y)) continue; if (R() < 0.4) g.beginFill(0x7080a8, 0.05).drawCircle((x + R()) * c, (y + R()) * c, c * (0.3 + R() * 0.4)).endFill(); }
+  }
+}
+// a roof seen from above: thatch, slate or clay tiles about a ridge, lit from the top left, a chimney now and then;
+// under snow, white but for the eaves
+function drawRoofPainted(f, c, R) {
+  const g = new PIXI.Graphics(), e = c * 0.14;
+  const x0 = f.x * c - e, y0 = f.y * c - e, W = f.w * c + 2 * e, H = f.h * c + 2 * e;
+  const along = f.w > f.h || (f.w === f.h && f.r % 2 === 0);
+  const k = R(), kind = k < 0.38 ? 'thatch' : k < 0.72 ? 'slate' : 'clay';
+  const look = kind === 'thatch' ? ['thatch', 1.3, 0xd8bc80] : kind === 'slate' ? ['slate', 1.1, 0x8c929c] : ['slate', 1.1, 0xb4664c];
+  const snow = SEA === 'snow';
+  g.beginFill(0x000000, 0.28).drawRect(x0 + c * 0.2, y0 + c * 0.28, W, H).endFill();
+  g.beginFill(0x000000, 0.14).drawRect(x0 + c * 0.38, y0 + c * 0.5, W, H).endFill();
+  g.lineStyle({ width: Math.max(1, c * 0.03), color: RIM, alpha: 0.8 });
+  texFill(g, look, c, { rot: along ? 0 : Math.PI / 2 }); g.drawRect(x0, y0, W, H); g.endFill(); g.lineStyle(0);
+  const hip = kind !== 'thatch' ? Math.min(W, H) / 2 : 0;
+  // the two slopes, and hipped ends on slate and tile
+  const litA = snow ? 0.0 : 0.1, darkA = snow ? 0.0 : 0.22;
+  if (along) {
+    g.beginFill(0xffffff, litA).drawPolygon([x0, y0, x0 + W, y0, x0 + W - hip, y0 + H / 2, x0 + hip, y0 + H / 2]).endFill();
+    g.beginFill(0x000000, darkA).drawPolygon([x0, y0 + H, x0 + W, y0 + H, x0 + W - hip, y0 + H / 2, x0 + hip, y0 + H / 2]).endFill();
+    if (hip) g.beginFill(0x000000, snow ? 0 : 0.1).drawPolygon([x0 + W, y0, x0 + W - hip, y0 + H / 2, x0 + W, y0 + H]).endFill().beginFill(0xffffff, snow ? 0 : 0.05).drawPolygon([x0, y0, x0 + hip, y0 + H / 2, x0, y0 + H]).endFill();
+  } else {
+    g.beginFill(0xffffff, litA).drawPolygon([x0, y0, x0, y0 + H, x0 + W / 2, y0 + H - hip, x0 + W / 2, y0 + hip]).endFill();
+    g.beginFill(0x000000, darkA).drawPolygon([x0 + W, y0, x0 + W, y0 + H, x0 + W / 2, y0 + H - hip, x0 + W / 2, y0 + hip]).endFill();
+    if (hip) g.beginFill(0x000000, snow ? 0 : 0.1).drawPolygon([x0, y0 + H, x0 + W / 2, y0 + H - hip, x0 + W, y0 + H]).endFill().beginFill(0xffffff, snow ? 0 : 0.05).drawPolygon([x0, y0, x0 + W / 2, y0 + hip, x0 + W, y0]).endFill();
+  }
+  if (snow) {
+    // the snow on it: the lit slope bright, the far one in blue shade; the eaves' edge shows
+    const i = c * 0.08;
+    texFill(g, ['snow', 3, 0xffffff], c, { alpha: 0.95 });
+    if (along) g.drawPolygon([x0 + i, y0 + i, x0 + W - i, y0 + i, x0 + W - hip, y0 + H / 2, x0 + hip, y0 + H / 2]); else g.drawPolygon([x0 + i, y0 + i, x0 + i, y0 + H - i, x0 + W / 2, y0 + H - hip, x0 + W / 2, y0 + hip]);
+    g.endFill();
+    texFill(g, ['snow', 3, 0xc8d2e2], c, { alpha: 0.93 });
+    if (along) g.drawPolygon([x0 + i, y0 + H - i, x0 + W - i, y0 + H - i, x0 + W - hip, y0 + H / 2, x0 + hip, y0 + H / 2]); else g.drawPolygon([x0 + W - i, y0 + i, x0 + W - i, y0 + H - i, x0 + W / 2, y0 + H - hip, x0 + W / 2, y0 + hip]);
+    g.endFill();
+    if (hip) { texFill(g, ['snow', 3, 0xdde4ee], c, { alpha: 0.93 }); if (along) g.drawPolygon([x0 + i, y0 + i, x0 + hip, y0 + H / 2, x0 + i, y0 + H - i]).drawPolygon([x0 + W - i, y0 + i, x0 + W - hip, y0 + H / 2, x0 + W - i, y0 + H - i]); else g.drawPolygon([x0 + i, y0 + i, x0 + W / 2, y0 + hip, x0 + W - i, y0 + i]).drawPolygon([x0 + i, y0 + H - i, x0 + W / 2, y0 + H - hip, x0 + W - i, y0 + H - i]); g.endFill(); }
+  }
+  // the ridge and the hips
+  const rA = along ? [x0 + hip, y0 + H / 2] : [x0 + W / 2, y0 + hip], rB = along ? [x0 + W - hip, y0 + H / 2] : [x0 + W / 2, y0 + H - hip];
+  g.lineStyle({ width: c * 0.07, color: snow ? 0x9aa4b4 : RIM, alpha: snow ? 0.5 : 0.55, cap: PIXI.LINE_CAP.ROUND }).moveTo(rA[0], rA[1]).lineTo(rB[0], rB[1]);
+  if (hip) { g.lineStyle({ width: c * 0.04, color: snow ? 0x9aa4b4 : RIM, alpha: 0.35, cap: PIXI.LINE_CAP.ROUND });
+    for (const [p, q] of along ? [[rA, [x0, y0]], [rA, [x0, y0 + H]], [rB, [x0 + W, y0]], [rB, [x0 + W, y0 + H]]] : [[rA, [x0, y0]], [rA, [x0 + W, y0]], [rB, [x0, y0 + H]], [rB, [x0 + W, y0 + H]]]) g.moveTo(p[0], p[1]).lineTo(q[0], q[1]); }
+  g.lineStyle({ width: c * 0.03, color: snow ? 0xffffff : kind === 'thatch' ? 0xf0d8a0 : 0xd8dce0, alpha: snow ? 0.9 : 0.35, cap: PIXI.LINE_CAP.ROUND }).moveTo(rA[0], rA[1] - c * 0.02).lineTo(rB[0], rB[1] - c * 0.02);
+  g.lineStyle({ width: c * 0.05, color: 0x000000, alpha: 0.16 }).drawRect(x0 + c * 0.025, y0 + c * 0.025, W - c * 0.05, H - c * 0.05);
+  g.lineStyle(0);
+  // a chimney
+  if (R() < 0.5 && Math.max(W, H) > c * 2.6) {
+    const t = 0.25 + R() * 0.5, s = c * 0.44, cx = along ? x0 + W * t : x0 + W / 2 + c * 0.1, cy = along ? y0 + H / 2 + c * 0.1 : y0 + H * t;
+    g.beginFill(0x000000, 0.3).drawRect(cx - s / 2 + c * 0.16, cy - s / 2 + c * 0.22, s, s).endFill();
+    g.lineStyle({ width: Math.max(1, c * 0.025), color: RIM, alpha: 0.85 }); texFill(g, ['brick', 0.9, 0x9a7a68], c); g.drawRect(cx - s / 2, cy - s / 2, s, s); g.endFill(); g.lineStyle(0);
+    g.beginFill(0x1a1410).drawRect(cx - s * 0.25, cy - s * 0.25, s * 0.5, s * 0.5).endFill();
+    if (snow) g.beginFill(0xffffff, 0.95).drawRect(cx - s / 2, cy - s / 2, s, s * 0.22).drawRect(cx - s / 2, cy - s / 2, s * 0.22, s).endFill();
+  }
+  return g;
 }
 function drawDoorPainted(d, c, st, gm, wl) {
   const g = new PIXI.Graphics();
@@ -727,21 +948,64 @@ function drawFeatPainted(f, c, st, R, gsh) {
     case 'blood': none(); g.beginFill(0x5a0a0a, 0.65).drawEllipse(0, 0, c * 0.3, c * 0.2).endFill(); g.beginFill(0x5a0a0a, 0.6).drawCircle(c * 0.3, c * 0.2, c * 0.06).drawCircle(-c * 0.28, -c * 0.16, c * 0.04).drawCircle(c * 0.1, -c * 0.26, c * 0.03).endFill(); break;
     case 'banner': rect(-c * 0.36, -c * 0.5, c * 0.72, c * 0.08, METAL); rect(-c * 0.28, -c * 0.44, c * 0.56, c * 0.34, CLOTH([0x8a1e24, 0x1e3a6a, 0x2a5a2a][Math.floor(R() * 3)])); none(); g.beginFill(0xd8b050).drawCircle(0, -c * 0.28, c * 0.07).endFill(); break;
     case 'boulder': { const pts = []; for (let k = 0; k < 9; k++) { const a = k / 9 * Math.PI * 2, r = c * (0.32 + R() * 0.1); pts.push(Math.cos(a) * r, Math.sin(a) * r); } shadowCirc(0, 0, c * 0.4, 1.5); edge(); texFill(g, ROCKL, c); g.drawPolygon(pts); g.endFill(); none(); g.beginFill(0xffffff, 0.12).drawCircle(-c * 0.1, -c * 0.1, c * 0.15).endFill(); break; }
-    case 'tree': case 'bush': {
-      // a canopy seen from above: a ragged mass of leaf, lobes catching the light from the top left, dark beneath
-      const big = f.k === 'tree', r = big ? Math.min(W, H) * 0.47 : c * 0.36, conifer = big && R() < 0.3;
-      const base = conifer ? [0x24402c, 0x2f5236, 0x4a7350] : [[0x2d4a22, 0x3f6a2c, 0x7aa34e], [0x34501f, 0x4d7429, 0x8fb04a], [0x3a4a1e, 0x5a6a2a, 0x9aa850]][Math.floor(R() * 3)];
-      const leaf = (tint, sq) => ['grass', sq || 0.55, tint];
-      shadowCirc(r * 0.12, r * 0.12, r * 0.98, big ? 2.6 : 1.2);
-      if (conifer) {   // a pine: layered rings of needled branches, darker at the edge
+    case 'tree': case 'bush': case 'pine': {
+      // a canopy seen from above: a ragged mass of leaf, lobes catching the light from the top left, dark beneath; in
+      // spring fresh and sometimes in blossom, in autumn turned; in winter bare branches (white along their tops in snow)
+      const big = f.k !== 'bush', r = big ? Math.min(W, H) * 0.47 : c * 0.36, conifer = f.k === 'pine' || (big && R() < 0.3);
+      const snowy = SEA === 'snow' && OUTD(f.x, f.y), cold = SEA === 'winter' || SEA === 'snow';
+      const leaf = (tint, sq) => ['grass', sq || 0.55, tint], SNOWL = ['snow', 1.2, 0xffffff];
+      if (conifer) {   // a pine: layered rings of needled branches, darker at the edge; snow lying on each ring
+        const base = cold ? [0x1c3424, 0x26442e, 0x3a5e42] : [0x24402c, 0x2f5236, 0x4a7350];
+        shadowCirc(r * 0.12, r * 0.12, r * 0.98, big ? 2.6 : 1.2);
         for (const [rr, col, n] of [[1, base[0], 11], [0.74, base[1], 9], [0.46, base[2], 7]]) {
           const pts = []; const ph = R() * 6;
           for (let k = 0; k < n * 2; k++) { const a = ph + k / (n * 2) * Math.PI * 2, rad = r * rr * (k % 2 ? 0.62 : 1); pts.push(Math.cos(a) * rad, Math.sin(a) * rad); }
           g.lineStyle({ width: lw * 0.8, color: 0x0e1a10, alpha: 0.5 }); texFill(g, leaf(col, 0.4), c); g.drawPolygon(pts); g.endFill();
+          if (snowy) { none(); texFill(g, SNOWL, c, { alpha: 0.9 }); g.drawPolygon(pts.map((v, i) => v * 0.78 - r * (i % 2 ? 0.06 : 0.05))); g.endFill();
+            texFill(g, ['snow', 1.2, 0xc8d4e4], c, { alpha: 0.5 }); g.drawPolygon(pts.map((v, i) => v * 0.5 + r * 0.06)); g.endFill(); }
         }
-        none(); g.beginFill(0x5a3a22).drawCircle(0, 0, r * 0.08).endFill();
+        none(); g.beginFill(snowy ? 0xffffff : 0x5a3a22).drawCircle(0, 0, r * 0.08).endFill();
         break;
       }
+      if (cold) {
+        // bare: branches from the trunk, forking, thinning to twigs
+        const segs = [], depthMax = big ? 3 : 2;
+        const grow = (x, y, a, len, wd, d) => { const x1 = x + Math.cos(a) * len, y1 = y + Math.sin(a) * len; segs.push([x, y, x1, y1, wd, d]);
+          if (d < depthMax) for (let i = 0; i < 2; i++) grow(x1, y1, a + (i ? 1 : -1) * (0.3 + R() * 0.4) + (R() - 0.5) * 0.3, len * (0.62 + R() * 0.12), wd * 0.6, d + 1); };
+        const nb = big ? 5 + Math.floor(R() * 3) : 4 + Math.floor(R() * 2), ph = R() * 6, len0 = r * (big ? 0.42 : 0.5), wd0 = Math.max(lw * 1.4, r * (big ? 0.1 : 0.08));
+        for (let k = 0; k < nb; k++) grow(0, 0, ph + k / nb * Math.PI * 2 + (R() - 0.5) * 0.5, len0 * (0.85 + R() * 0.3), wd0, 0);
+        // their shadow, thin on the ground
+        for (const s0 of segs) if (s0[5] < 2) { const [ax, ay] = toWorld(s0[0], s0[1]), [bx, by] = toWorld(s0[2], s0[3]); gsh.lineStyle({ width: s0[4], color: 0x000000, alpha: 0.14, cap: PIXI.LINE_CAP.ROUND }); gsh.moveTo(ax + c * 0.3, ay + c * 0.36).lineTo(bx + c * 0.3, by + c * 0.36); }
+        gsh.lineStyle(0);
+        if (!big && snowy) {   // a bush under snow: a white mound, its twigs poking through
+          shadowCirc(r * 0.1, r * 0.1, r * 0.8, 0.8);
+          g.lineStyle({ width: lw * 0.6, color: 0x8a96aa, alpha: 0.5 }); texFill(g, SNOWL, c); g.drawCircle(0, 0, r * 0.78); g.endFill(); none();
+          g.beginFill(0x8090b0, 0.18).drawCircle(r * 0.18, r * 0.2, r * 0.55).endFill(); g.beginFill(0xffffff, 0.6).drawCircle(-r * 0.2, -r * 0.24, r * 0.35).endFill();
+          for (const s0 of segs) if (s0[5] >= 1) { g.lineStyle({ width: Math.max(0.8, s0[4]), color: 0x4a3a2c, alpha: 0.85, cap: PIXI.LINE_CAP.ROUND }); g.moveTo(s0[0] * 1.2, s0[1] * 1.2).lineTo(s0[2] * 1.25, s0[3] * 1.25); }
+          break;
+        }
+        // the crown's haze of twigs, grey against the ground (a ring of fine strokes at its edge)
+        none(); g.beginFill(0x9a8e80, snowy ? 0.14 : 0.26).drawCircle(0, 0, r * 0.92).endFill(); g.beginFill(0xb8aea0, snowy ? 0.08 : 0.16).drawCircle(-r * 0.12, -r * 0.14, r * 0.6).endFill();
+        g.lineStyle({ width: Math.max(0.6, lw * 0.4), color: 0x8a7c6c, alpha: 0.55 }); for (let k = 0; k < (big ? 40 : 16); k++) { const a = R() * 6.28, d = r * (0.55 + R() * 0.35); g.moveTo(Math.cos(a) * d, Math.sin(a) * d).lineTo(Math.cos(a + (R() - 0.5) * 0.3) * (d + r * 0.14), Math.sin(a + (R() - 0.5) * 0.3) * (d + r * 0.14)); }
+        // dark under each branch, the wood, a pale top where the light (or frost) catches it
+        for (const s0 of segs) { g.lineStyle({ width: s0[4] * 1.35, color: 0x1e160e, alpha: 0.55, cap: PIXI.LINE_CAP.ROUND }); g.moveTo(s0[0] + s0[4] * 0.15, s0[1] + s0[4] * 0.2).lineTo(s0[2] + s0[4] * 0.15, s0[3] + s0[4] * 0.2); }
+        for (const s0 of segs) { g.lineStyle({ width: s0[4], color: s0[5] >= 2 ? 0x8a7a68 : 0x6e5e4c, alpha: 0.98, cap: PIXI.LINE_CAP.ROUND }); g.moveTo(s0[0], s0[1]).lineTo(s0[2], s0[3]); }
+        if (!snowy) for (const s0 of segs) if (s0[5] < 2) { g.lineStyle({ width: s0[4] * 0.35, color: SEA === 'winter' ? 0xe4eaf0 : 0xb8a890, alpha: 0.6, cap: PIXI.LINE_CAP.ROUND }); g.moveTo(s0[0] - s0[4] * 0.2, s0[1] - s0[4] * 0.2).lineTo(s0[2] - s0[4] * 0.2, s0[3] - s0[4] * 0.2); }
+        g.lineStyle({ width: Math.max(0.6, lw * 0.45), color: 0x8a7a68, alpha: 0.6, cap: PIXI.LINE_CAP.ROUND });
+        for (const s0 of segs) if (s0[5] === depthMax) for (let t = 0; t < 2; t++) { const a = Math.atan2(s0[3] - s0[1], s0[2] - s0[0]) + (R() - 0.5) * 1.4, l = r * 0.1; g.moveTo(s0[2], s0[3]).lineTo(s0[2] + Math.cos(a) * l, s0[3] + Math.sin(a) * l); }
+        none(); g.beginFill(0x2e2218).drawCircle(0, 0, wd0 * 1.3).endFill();
+        if (snowy) {
+          for (const s0 of segs) if (s0[5] <= 2) { g.lineStyle({ width: s0[4] * 0.55, color: 0xffffff, alpha: 0.92, cap: PIXI.LINE_CAP.ROUND }); g.moveTo(s0[0] - s0[4] * 0.2, s0[1] - s0[4] * 0.25).lineTo(s0[2] - s0[4] * 0.2, s0[3] - s0[4] * 0.25); }
+          none(); g.beginFill(0xffffff, 0.92).drawCircle(-wd0 * 0.35, -wd0 * 0.35, wd0 * 0.85).endFill();
+        }
+        break;
+      }
+      const PAL = {
+        spring: [[0x3a6a26, 0x58923a, 0xa8d470], [0x40702a, 0x62a040, 0xb8e07a], [0x355f24, 0x4f8a30, 0x98c860]],
+        autumn: [[0x7a3412, 0xb8541a, 0xf2a040], [0x8a5c12, 0xc8901e, 0xf6d25a], [0x6e2410, 0xa83a18, 0xe8703c], [0x4a5420, 0x7c7a28, 0xd0b048]],
+        summer: [[0x2d4a22, 0x3f6a2c, 0x7aa34e], [0x34501f, 0x4d7429, 0x8fb04a], [0x3a4a1e, 0x5a6a2a, 0x9aa850]] };
+      const pal = PAL[SEA] || PAL.summer, base = pal[Math.floor(R() * pal.length)];
+      shadowCirc(r * 0.12, r * 0.12, r * 0.98, big ? 2.6 : 1.2);
       // the mass: a ragged outline
       const pts = [], n = big ? 18 : 10, ph = R() * 6;
       for (let k = 0; k < n; k++) { const a = ph + k / n * Math.PI * 2, rad = r * (0.8 + R() * 0.2); pts.push(Math.cos(a) * rad, Math.sin(a) * rad); }
@@ -757,8 +1021,90 @@ function drawFeatPainted(f, c, st, R, gsh) {
       texFill(g, leaf(base[1]), c, { tx: 91 }); g.drawCircle(-r * 0.05, -r * 0.05, r * 0.42); g.endFill();
       g.beginFill(base[2], 0.42).drawCircle(-r * 0.16, -r * 0.18, r * 0.2).endFill();
       for (let k = 0; k < (big ? 10 : 4); k++) g.beginFill(base[2], 0.35).drawCircle((R() - 0.62) * r * 1.1, (R() - 0.62) * r * 1.1, r * (0.04 + R() * 0.05)).endFill();   // leaves in the sun
+      if (SEA === 'spring' && R() < (big ? 0.35 : 0.25)) {   // in blossom
+        const bc = R() < 0.5 ? [0xffffff, 0xf8e8f0] : [0xf4b4cc, 0xfad4e2];
+        for (let k = 0; k < (big ? 46 : 14); k++) { const a = R() * 6.28, d = Math.sqrt(R()) * r * 0.85; g.beginFill(bc[k % 2], 0.92).drawCircle(Math.cos(a) * d - r * 0.05, Math.sin(a) * d - r * 0.05, r * (0.035 + R() * 0.03)).endFill(); }
+      }
       break;
     }
+    case 'stump': shadowCirc(0, 0, c * 0.27, 0.8); circ(0, 0, c * 0.27, ['wood', 1.2, 0x6a5038]); circ(0, 0, c * 0.21, flat(0xc8a070));
+      g.lineStyle({ width: lw * 0.6, color: 0x8a6a42, alpha: 0.8 }).drawCircle(0, 0, c * 0.14).drawCircle(0, 0, c * 0.07); break;
+    case 'reeds': {
+      const cold = SEA === 'winter' || SEA === 'snow', stem = SEA === 'autumn' || cold ? [0xa88a4a, 0x8a7038] : [0x5a7a2a, 0x48682a];
+      for (let k = 0; k < 14; k++) { const x = (R() - 0.5) * c * 0.7, y = (R() - 0.5) * c * 0.7, a = -Math.PI / 2 + (R() - 0.5) * 1.2, l = c * (0.18 + R() * 0.2);
+        g.lineStyle({ width: Math.max(1, c * 0.022), color: stem[k % 2], alpha: 0.95, cap: PIXI.LINE_CAP.ROUND }).moveTo(x, y).lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+        if (k % 3 === 0) { none(); g.beginFill(0x5a3a22).drawEllipse(x + Math.cos(a) * l, y + Math.sin(a) * l, c * 0.025, c * 0.045).endFill(); if (SEA === 'snow') g.beginFill(0xffffff, 0.9).drawCircle(x + Math.cos(a) * l - c * 0.01, y + Math.sin(a) * l - c * 0.03, c * 0.022).endFill(); } }
+      break;
+    }
+    case 'flowers': {
+      if (SEA === 'winter' || SEA === 'snow') break;
+      const cols = SEA === 'autumn' ? [0xc89a3a, 0x9a6a3a, 0xd8c070] : [0xffffff, 0xf8d848, 0xe85a6a, 0xb878e0, 0xf4a0c0];
+      for (let k = 0; k < (SEA === 'autumn' ? 5 : 14); k++) { const x = (R() - 0.5) * c * 0.8, y = (R() - 0.5) * c * 0.8, col = cols[Math.floor(R() * cols.length)];
+        none(); g.beginFill(0x3a5a22, 0.6).drawCircle(x + c * 0.01, y + c * 0.02, c * 0.035).endFill(); g.beginFill(col).drawCircle(x, y, c * (0.025 + R() * 0.02)).endFill(); g.beginFill(0xf8e070).drawCircle(x, y, c * 0.01).endFill(); }
+      break;
+    }
+    case 'fence': {   // along the back edge of its square
+      const y = -c * 0.44;
+      shadowRect(-c * 0.5, y - c * 0.03, c, c * 0.07, 0.5);
+      rect(-c * 0.5, y - c * 0.035, c, c * 0.07, ['wood', 1, 0x9a7a54]);
+      for (const x of [-c * 0.44, c * 0.44]) { shadowCirc(x, y, c * 0.06, 0.6); circ(x, y, c * 0.065, ['wood', 1, 0x6a5038]); }
+      break;
+    }
+    case 'parapet': {
+      const y = -c * 0.5;
+      shadowRect(-c * 0.5, y, c, c * 0.26, 0.9);
+      rect(-c * 0.5, y, c, c * 0.26, STONE, { edgeA: 0.6 }); hi(-c * 0.5, y, c, c * 0.06, 0.16);
+      g.lineStyle({ width: lw * 0.6, color: RIM, alpha: 0.35 }).moveTo(-c * 0.02 + (R() - 0.5) * c * 0.3, y).lineTo(-c * 0.02 + (R() - 0.5) * c * 0.3, y + c * 0.26);
+      break;
+    }
+    case 'signpost': {
+      shadowCirc(0, 0, c * 0.08, 2.2);
+      const a = R() * Math.PI;
+      for (const [aa, l] of [[a, 0.4], [a + 1.4 + R() * 0.6, 0.34]]) { g.lineStyle({ width: c * 0.11, color: 0x3a2a1a, alpha: 0.9, cap: PIXI.LINE_CAP.BUTT }).moveTo(0, 0).lineTo(Math.cos(aa) * c * l, Math.sin(aa) * c * l);
+        g.lineStyle({ width: c * 0.08, color: 0xa88458, alpha: 1, cap: PIXI.LINE_CAP.BUTT }).moveTo(0, 0).lineTo(Math.cos(aa) * c * l, Math.sin(aa) * c * l);
+        if (SEA === 'snow') g.lineStyle({ width: c * 0.03, color: 0xffffff, alpha: 0.9 }).moveTo(-c * 0.01, -c * 0.03).lineTo(Math.cos(aa) * c * l - c * 0.01, Math.sin(aa) * c * l - c * 0.03); }
+      none(); circ(0, 0, c * 0.075, ['wood', 1, 0x6a5038]);
+      break;
+    }
+    case 'streetlamp': {
+      none(); for (const [col, rr, a] of [[0xffc060, 0.36, 0.12], [0xffd080, 0.2, 0.3]]) g.beginFill(col, a).drawCircle(0, 0, c * rr).endFill();
+      shadowCirc(0, 0, c * 0.09, 2.4); circ(0, 0, c * 0.1, METAL);
+      rect(-c * 0.13, -c * 0.13, c * 0.26, c * 0.26, flat(0x2e2c2a)); none(); g.beginFill(0xffe6a0).drawRect(-c * 0.08, -c * 0.08, c * 0.16, c * 0.16).endFill();
+      g.beginFill(0x2e2c2a).drawRect(-c * 0.012, -c * 0.08, c * 0.024, c * 0.16).drawRect(-c * 0.08, -c * 0.012, c * 0.16, c * 0.024).endFill();
+      break;
+    }
+    case 'stall': {   // a trestle of goods under a striped awning, open to the front (the side away from its back)
+      const awn = [[0xb8342a, 0xf0e4c8], [0x2a5a8a, 0xf0e4c8], [0x3a6a32, 0xe8d8a8], [0xc8902a, 0x6a2a1a], [0x6a3a7a, 0xe8d8c0]][Math.floor(R() * 5)];
+      shadowRect(-W * 0.48, -H * 0.48, W * 0.96, H * 0.7, 1.8);
+      rect(-W * 0.44, H * 0.06, W * 0.88, H * 0.3, WOOD);
+      const goods = [0xc8a040, 0x8a3a2a, 0x5a7a3a, 0xd8c8a0, 0x9a6a3a, 0xb05a3a];
+      none(); for (let k = 0; k < 9; k++) g.beginFill(goods[Math.floor(R() * goods.length)]).drawCircle(-W * 0.38 + k * W * 0.095, H * 0.14 + (k % 2) * H * 0.1, c * 0.06).endFill();
+      const y0 = -H * 0.48, ah = H * 0.6, n = 6, sw = W * 0.96 / n;
+      edge(0.85); texFill(g, CLOTH(awn[0]), c); g.drawRect(-W * 0.48, y0, W * 0.96, ah); g.endFill(); none();
+      for (let k = 1; k < n; k += 2) { texFill(g, CLOTH(awn[1]), c); g.drawRect(-W * 0.48 + k * sw, y0, sw, ah); g.endFill(); }
+      g.beginFill(0x000000, 0.14).drawRect(-W * 0.48, y0 + ah * 0.55, W * 0.96, ah * 0.45).endFill();
+      for (let k = 0; k < n; k++) { texFill(g, CLOTH(awn[k % 2]), c); g.drawCircle(-W * 0.48 + (k + 0.5) * sw, y0 + ah, sw * 0.42); g.endFill(); }   // the scalloped edge
+      if (SEA === 'snow') { texFill(g, ['snow', 1.5, 0xffffff], c, { alpha: 0.92 }); g.drawRect(-W * 0.46, y0 + c * 0.04, W * 0.92, ah * 0.85); g.endFill(); }
+      for (const [x, y] of [[-W * 0.47, y0], [W * 0.47, y0], [-W * 0.47, y0 + ah], [W * 0.47, y0 + ah]]) circ(x, y, c * 0.045, ['wood', 1, 0x5a4030]);
+      break;
+    }
+    case 'woodpile': {
+      shadowRect(-W * 0.46, -H * 0.34, W * 0.92, H * 0.68, 1.1);
+      rect(-W * 0.46, -H * 0.34, W * 0.92, H * 0.68, ['wood', 1, 0x5a4030]);
+      none(); for (let row = 0; row < 3; row++) for (let k = 0; k < 6; k++) { const x = -W * 0.4 + k * W * 0.16 + (row % 2) * W * 0.08, y = -H * 0.22 + row * H * 0.22; if (x > W * 0.42) continue;
+        g.lineStyle({ width: lw * 0.6, color: 0x4a3020, alpha: 0.8 }); g.beginFill(0xc8a070).drawCircle(x, y, c * 0.085).endFill(); g.lineStyle(0); g.beginFill(0x8a6a42, 0.6).drawCircle(x, y, c * 0.03).endFill(); }
+      break;
+    }
+    case 'grave': {   // a headstone at the head (the back), the mound before it
+      const snowy = SEA === 'snow' && OUTD(f.x, f.y);
+      none(); g.beginFill(0x000000, 0.12).drawEllipse(c * 0.06, H * 0.12, W * 0.34, H * 0.3).endFill();
+      edge(0.5); texFill(g, snowy ? ['snow', 2, 0xffffff] : ['earth', 2, 0xb8a488], c); g.drawEllipse(0, H * 0.08, W * 0.3, H * 0.28); g.endFill();
+      if (!snowy && (SEA === 'spring' || SEA === 'summer')) { texFill(g, ['grass', 1, 0xd8e8c0], c, { alpha: 0.6 }); g.drawEllipse(0, H * 0.1, W * 0.24, H * 0.22); g.endFill(); }
+      shadowRect(-W * 0.36, -H * 0.42, W * 0.72, H * 0.16, 1.6);
+      rrect(-W * 0.36, -H * 0.42, W * 0.72, H * 0.14, c * 0.05, STONE); hi(-W * 0.36, -H * 0.42, W * 0.72, H * 0.04, 0.2);
+      break;
+    }
+    case 'roof': return drawRoofPainted(f, c, R);
     case 'log': shadowRect(-W * 0.46, -H * 0.22, W * 0.92, H * 0.44); rect(-W * 0.46, -H * 0.22, W * 0.92, H * 0.44, ['wood', 1.2, 0x8a6a4a]); circ(W * 0.46, 0, H * 0.22, flat(0xc8a070)); g.lineStyle({ width: lw * 0.6, color: 0x6a4a2a, alpha: 0.7 }).drawCircle(W * 0.46, 0, H * 0.12); break;
     case 'tent': { const pts = [-W * 0.46, H * 0.46, -W * 0.46, -H * 0.2, 0, -H * 0.46, W * 0.46, -H * 0.2, W * 0.46, H * 0.46]; shadowRect(-W * 0.46, -H * 0.46, W * 0.92, H * 0.92, 1.4); edge(); texFill(g, CLOTH(0xc8b890), c); g.drawPolygon(pts); g.endFill(); lines([0, -H * 0.46, 0, H * 0.46], RIM, 0.6); none(); g.beginFill(0x000000, 0.12).drawPolygon([0, -H * 0.46, W * 0.46, -H * 0.2, W * 0.46, H * 0.46, 0, H * 0.46]).endFill(); break; }
     case 'campfire': for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; circ(Math.cos(a) * c * 0.28, Math.sin(a) * c * 0.28, c * 0.075, ROCKL); } lines([-c * 0.18, -c * 0.1, c * 0.18, c * 0.1, -c * 0.18, c * 0.1, c * 0.18, -c * 0.1], 0x4a2a18, 1, lw * 3);
@@ -767,6 +1113,26 @@ function drawFeatPainted(f, c, st, R, gsh) {
       lines([-W * 0.1, -H * 0.38, -W * 0.1, -H * 0.5, W * 0.1, -H * 0.38, W * 0.1, -H * 0.5], 0x5a3a20, 1, lw * 2.5); none(); g.beginFill(0xd8c070, 0.9).drawEllipse(0, H * 0.05, W * 0.25, H * 0.2).endFill(); break;
     case 'haybale': shadowRect(-c * 0.36, -c * 0.3, c * 0.72, c * 0.6); rect(-c * 0.36, -c * 0.3, c * 0.72, c * 0.6, ['thatch', 1, 0xf0d890]); lines([-c * 0.12, -c * 0.3, -c * 0.12, c * 0.3, c * 0.12, -c * 0.3, c * 0.12, c * 0.3], 0x6a5020, 0.8, lw * 1.5); break;
     default: rect(-W * 0.4, -H * 0.4, W * 0.8, H * 0.8, STONE);
+  }
+  // snow lying on what's out in the open: on its top, toward the light
+  if (SEA === 'snow' && OUTD(f.x, f.y)) {
+    const SN = ['snow', 1.4, 0xffffff], cap = fn => { g.lineStyle({ width: Math.max(1, c * 0.015), color: 0xc8d2e0, alpha: 0.6 }); texFill(g, SN, c, { alpha: 0.94 }); fn(); g.endFill(); g.lineStyle(0); };
+    switch (f.k) {
+      case 'boulder': case 'statue': cap(() => g.drawEllipse(-c * 0.07, -c * 0.09, c * 0.24, c * 0.18)); break;
+      case 'stump': cap(() => g.drawCircle(-c * 0.02, -c * 0.02, c * 0.2)); break;
+      case 'log': cap(() => g.drawRoundedRect(-W * 0.44, -H * 0.22, W * 0.86, H * 0.22, H * 0.1)); break;
+      case 'cart': cap(() => g.drawRoundedRect(-W * 0.36, -H * 0.34, W * 0.72, H * 0.56, c * 0.08)); break;
+      case 'tent': cap(() => g.drawPolygon([-W * 0.4, H * 0.3, -W * 0.4, -H * 0.16, 0, -H * 0.42, W * 0.1, -H * 0.38, W * 0.1, H * 0.3])); break;
+      case 'haybale': case 'crate': case 'chest': cap(() => g.drawRoundedRect(-c * 0.3, -c * 0.26, c * 0.6, c * 0.26, c * 0.06)); break;
+      case 'barrel': case 'sack': case 'well': cap(() => g.drawEllipse(-c * 0.05, -c * 0.08, c * 0.2, c * 0.14)); break;
+      case 'woodpile': cap(() => g.drawRoundedRect(-W * 0.44, -H * 0.34, W * 0.88, H * 0.26, c * 0.06)); break;
+      case 'bench': case 'table': cap(() => g.drawRoundedRect(-W * 0.42, -H * 0.3, W * 0.84, H * 0.36, c * 0.04)); break;
+      case 'fence': cap(() => g.drawRect(-c * 0.5, -c * 0.47, c, c * 0.035)); break;
+      case 'parapet': cap(() => g.drawRect(-c * 0.5, -c * 0.5, c, c * 0.14)); break;
+      case 'grave': cap(() => g.drawRect(-W * 0.36, -H * 0.42, W * 0.72, H * 0.05)); break;
+      case 'fountain': { const rr = Math.min(W, H) * 0.36; cap(() => g.drawCircle(0, 0, rr)); break; }
+      case 'streetlamp': cap(() => g.drawRect(-c * 0.13, -c * 0.13, c * 0.26, c * 0.08)); break;
+    }
   }
   return g;
 }

@@ -6,6 +6,7 @@ const { $, $$, h, state, on } = V;
 // ───────────────────────── tabs ─────────────────────────
 
 V.showTab = function (name) {
+  if (!$(`#side .tabs button[data-tab="${name}"]`)) name = 'chat';   // (a tab that's gone, as initiative has: back to the chat)
   for (const b of $$('#side .tabs button')) b.classList.toggle('on', b.dataset.tab === name);
   for (const s of $$('#side .tab')) s.classList.toggle('on', s.id === 'tab-' + name);
   V.store.set('vtt-tab', name);
@@ -206,6 +207,28 @@ function renderInit() {
   );
 }
 on('init', renderInit); on('sel', renderInit); on('scene', renderInit); on('meta', renderInit);
+// the dock it lives in, on the left of the map: opened and closed from the toolbar (or I); it opens by itself when a
+// fight starts (someone goes into the order), and says the round in its heading
+let initOpen = !!V.store.get('vtt-init-open', false), initCount = 0;
+function setInitOpen(v) {
+  initOpen = !!v; V.store.set('vtt-init-open', initOpen);
+  const d = $('#initDock'); if (d) d.hidden = !initOpen;
+  const b = $('#initBtn'); if (b) b.classList.toggle('on', initOpen);
+}
+function initHead() {
+  const n = (state.init.entries || []).length;
+  if (n && !initCount) setInitOpen(true);
+  initCount = n;
+  const r = $('#initRound'); if (r) r.textContent = '';   // (the round shows in the dock itself)
+  const b = $('#initBtn'); if (b) b.classList.toggle('busy', !!n);
+}
+on('init', initHead); on('scene', initHead);
+if ($('#initBtn')) $('#initBtn').addEventListener('click', () => setInitOpen(!initOpen));
+if ($('#initClose')) $('#initClose').addEventListener('click', () => setInitOpen(false));
+document.addEventListener('keydown', e => {
+  if ((e.key === 'i' || e.key === 'I') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest('input, textarea, select, [contenteditable]')) setInitOpen(!initOpen);
+});
+setInitOpen(initOpen);
 
 // ───────────────────────── scenes (GM) ─────────────────────────
 

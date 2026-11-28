@@ -90,6 +90,7 @@ V.sceneSize = () => {
   const s = V.state.scene; if (!s) return { w: 1000, h: 1000 };
   const m = s.meta, g = V.grid();
   if (m.plan && m.plan.cols) return { w: m.plan.cols * g.size + (g.ox || 0), h: m.plan.rows * g.size + (g.oy || 0) };   // a planned map: its squares
+  if (m.iso && m.iso.w) return { w: (m.iso.w + m.iso.h) * 32 + 96, h: (m.iso.w + m.iso.h) * 16 + 348 };   // a forge map (table/iso): its diamonds, and room above for what stands on them
   if (m.image && m.image.w) return { w: m.image.w, h: m.image.h };
   const a = m.area || { cols: 30, rows: 20 };
   return { w: a.cols * g.size, h: a.rows * g.size };

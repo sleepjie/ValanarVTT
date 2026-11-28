@@ -1,6 +1,8 @@
 /* Grid and shape maths, shared by the server (fog checks) and the table (drawing, snapping, measuring).
  *
- * A scene's grid: { type: 'square' | 'hexr' | 'hexc' | 'none', size, ox, oy, feet, units, diagonal }
+ * A scene's grid: { type: 'square' | 'hexr' | 'hexc' | 'iso' | 'none', size, ox, oy, feet, units, diagonal }
+ *   iso     isometric diamonds (the map forge's maps): size is a diamond's width (its height is half that), and (ox, oy)
+ *           the centre of cell (0, 0); cell (i, j) is centred at (ox + (i - j) * size / 2, oy + (i + j) * size / 4).
  *   size    square: side in image pixels. hexr (pointy tops, in rows): distance between neighbouring
  *           centres along a row. hexc (flat tops, in columns): distance between neighbouring centres down a column.
  *   ox, oy  where a square's corner (square) or a hex's centre (hex) falls in the image.
@@ -39,6 +41,13 @@
     return out;
   }
 
+  // --- isometric helpers: the cell (i, j) a point is in, and a cell's centre ---
+  function isoAt(g, x, y) {
+    const u = (x - g.ox) / (g.size / 2), v = (y - g.oy) / (g.size / 4);
+    return [Math.round((u + v) / 2), Math.round((v - u) / 2)];
+  }
+  function isoCentre(g, i, j) { return [g.ox + (i - j) * g.size / 2, g.oy + (i + j) * g.size / 4]; }
+
   // Where a token of `cells` grid cells across should sit if dropped with its centre at (x, y).
   function snap(g, x, y, cells) {
     if (!g || g.type === 'none' || !(g.size > 0)) return [x, y];
@@ -48,6 +57,7 @@
       if (odd) return [g.ox + (Math.floor((x - g.ox) / g.size) + 0.5) * g.size, g.oy + (Math.floor((y - g.oy) / g.size) + 0.5) * g.size];
       return [g.ox + Math.round((x - g.ox) / g.size) * g.size, g.oy + Math.round((y - g.oy) / g.size) * g.size];
     }
+    if (g.type === 'iso') { const [i, j] = isoAt(g, x, y); return isoCentre(g, i, j); }
     const [q, r] = hexAt(g, x, y);
     return hexCentre(g, q, r);
   }
@@ -60,6 +70,12 @@
       const [ai, aj] = c([ax, ay]), [bi, bj] = c([bx, by]);
       const dx = Math.abs(bi - ai), dy = Math.abs(bj - aj);
       if (g.diagonal === 'euclid') return Math.hypot(bx - ax, by - ay) / g.size;
+      if (g.diagonal === 'alt') { const d = Math.min(dx, dy); return Math.max(dx, dy) + Math.floor(d / 2); }
+      return Math.max(dx, dy);
+    }
+    if (g.type === 'iso') {   // counted like squares: a diagonal step costs one (or 5-10-5)
+      const [ai, aj] = isoAt(g, ax, ay), [bi, bj] = isoAt(g, bx, by), dx = Math.abs(bi - ai), dy = Math.abs(bj - aj);
+      if (g.diagonal === 'euclid') return Math.hypot(bi - ai, bj - aj);
       if (g.diagonal === 'alt') { const d = Math.min(dx, dy); return Math.max(dx, dy) + Math.floor(d / 2); }
       return Math.max(dx, dy);
     }
@@ -99,7 +115,14 @@
 
   // Area templates. A template: { kind: 'cone' | 'circle' | 'line' | 'square', x, y, angle (radians), len (units), width (units) }.
   // Returns a polygon in image pixels.
+  // On an isometric grid the shape is worked out on the ground (the picture with its height doubled, where a cell is a
+  // square size/√2 across) and then flattened: a circle lies on the ground as an ellipse.
   function templatePoly(g, t) {
+    if (g && g.type === 'iso') {
+      const flat = templatePoly({ size: g.size / Math.SQRT2, feet: g.feet }, Object.assign({}, t, { x: 0, y: 0 }));
+      for (let i = 0; i < flat.length; i += 2) { flat[i] += t.x; flat[i + 1] = t.y + flat[i + 1] / 2; }
+      return flat;
+    }
     const ppu = ((g && g.size) || 100) / ((g && g.feet) || 5);   // pixels per foot
     const L = t.len * ppu, a = t.angle || 0, out = [];
     if (t.kind === 'circle') { for (let i = 0; i < 48; i++) { const b = i / 48 * Math.PI * 2; out.push(t.x + L * Math.cos(b), t.y + L * Math.sin(b)); } return out; }
@@ -119,6 +142,6 @@
     return out;
   }
 
-  const api = { S3, hexAt, hexCentre, hexCorners, snap, cells, pathLength, inShape, fogVisible, templatePoly };
+  const api = { S3, hexAt, hexCentre, hexCorners, isoAt, isoCentre, snap, cells, pathLength, inShape, fogVisible, templatePoly };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Geom = api;
 })(this);

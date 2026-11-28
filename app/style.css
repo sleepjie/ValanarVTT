@@ -2224,8 +2224,11 @@ html.phone #menuBtn svg { width: 20px; height: 20px; }
 .udname.ud-landmark { color: #c9e6d9; }
 .leaflet-tooltip.udtip { background: rgba(16,14,18,.94); color: #e6dfd2; border: 1px solid #4d4552; font: 13px/1.35 Georgia, serif; max-width: 280px; white-space: normal; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
 .leaflet-tooltip.udtip::before { display: none; }
-/* while the Underdark is up, the surface's places and names step back */
-body.underdark .mk-wrap, body.underdark .namesvg { opacity: .28; transition: opacity .3s; }
+/* while the Underdark is up, the surface goes: its places, names, lights, ships, the sea and the sea beyond the map
+   (the Underdark's own tiles keep a faint dotted coastline for bearings) */
+body.underdark .mk-wrap, body.underdark .namesvg, body.underdark .iconcv, body.underdark .ambfx, body.underdark canvas.ocean,
+body.underdark .tiles-backdrop, body.underdark .ambvignette { visibility: hidden !important; }
+body.underdark #map, body.underdark.has-ocean #map { background: #08070a; }
 /* Names › Defaults for each kind */
 details.nkinds { margin: 10px 0 4px; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; background: rgba(0,0,0,0.02); }
 details.nkinds > summary { cursor: pointer; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); padding: 2px 0; }
@@ -2304,3 +2307,13 @@ body.view-wiki #fxTray, body.tale-on #fxTray, body.drift-on #fxTray { display: n
 #fxTray .fxtile:hover .fxprev { transform: translateY(-2px); box-shadow: 0 0 0 1px rgba(255, 255, 255, .3), 0 4px 10px rgba(0, 0, 0, .35); }
 #fxTray .fxtile.on .fxprev { box-shadow: 0 0 0 2px var(--gold, #d8a54a), 0 4px 12px rgba(0, 0, 0, .4); }
 #fxTray .fxtile.on .fxname { opacity: 1; color: var(--gold, #d8a54a); font-weight: 600; }
+
+/* the shallows brush: its ring on the map, and no other cursor while painting */
+.shelfring { position: absolute; z-index: 700; pointer-events: none; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .9); box-shadow: 0 0 0 1px rgba(20, 30, 30, .6), inset 0 0 0 1px rgba(20, 30, 30, .4); background: rgba(160, 220, 220, .08); }
+.shelfring[hidden] { display: none; }
+body.shelf-painting #map, body.shelf-painting #map * { cursor: var(--cur-ring) !important; }
+.shelfbox { margin: 10px 0 4px; padding: 8px 10px; border: 1px solid var(--line, rgba(0,0,0,.15)); border-radius: 6px; }
+
+/* places with an icon, drawn on one canvas (app.js, ICV); the sample it reads their look from */
+.leaflet-marker-pane canvas.iconcv { position: absolute; left: 0; top: 0; pointer-events: none; z-index: -99999999; }
+.mk-wrap.icvprobe { position: absolute; left: -9999px; top: 0; visibility: hidden; pointer-events: none; }

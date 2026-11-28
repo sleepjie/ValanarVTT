@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Map Forge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alegreya+Sans+SC:wght@700&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* VOICE: a mapmaker's workbench, quiet and practical, the map does the talking
+   IDEA: a surveyor's field case: a slate of tiles beside a dark table where the land is laid out
+   PICTURE: the isometric map itself, edge to edge, lit against the black of the void
+   COLOUR and TYPE: moss green and lichen on charcoal; Alegreya Sans and its small caps
+   LAYOUT: toolbar on top, tile case at the left, the map filling the rest; stacked on phones */
+:root{color-scheme:light dark;--bg:light-dark(#eef0e6,#111310);--panel:light-dark(#f8f9f2,#191c17);--panel2:light-dark(#e3e7d6,#22271f);--ink:light-dark(#1d2117,#e6eadb);--soft:light-dark(#5b6450,#9aa38d);--line:light-dark(#cdd3bf,#30372b);--moss:light-dark(#4f6b1f,#a6c25a);--mossink:light-dark(#fff,#16200a)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 'Alegreya Sans',system-ui,sans-serif;overflow:hidden;display:grid;grid-template-rows:auto 1fr auto;grid-template-columns:300px minmax(0,1fr);grid-template-areas:"top top" "side map" "side foot"}
+header{grid-area:top;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+h1{font:700 21px/1 'Alegreya Sans SC',serif;margin:0 10px 0 2px;letter-spacing:.01em}
+h1 b{color:var(--moss)}
+.grow{flex:1}
+button,select,input{font:inherit;color:inherit}
+.btn{min-height:38px;padding:6px 12px;border-radius:7px;border:1px solid var(--line);background:var(--panel2);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--moss)}.btn:focus-visible,.sw:focus-visible,.pal button:focus-visible{outline:2px solid var(--moss);outline-offset:2px}
+.btn.on{background:var(--moss);color:var(--mossink);border-color:var(--moss)}
+.btn.main{background:var(--moss);color:var(--mossink);border-color:var(--moss);font-weight:700}
+.btn:disabled{opacity:.45;cursor:default}
+aside{grid-area:side;background:var(--panel);border-right:1px solid var(--line);overflow:auto;padding:10px 12px 18px}
+.tabs{display:flex;gap:4px;margin-bottom:10px}.tabs .btn{flex:1;justify-content:center}
+h2{font:700 13px/1.2 'Alegreya Sans SC',serif;color:var(--soft);margin:14px 0 6px;letter-spacing:.02em}
+.sws{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.sw{border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:4px 2px 3px;cursor:pointer;display:flex;flex-direction:column;align-items:center;font-size:12.5px;gap:2px}
+.sw.on,.pal button.on{border-color:var(--moss);box-shadow:0 0 0 2px var(--moss) inset}
+.sw canvas{width:56px;height:34px}
+.pal{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.pal button{aspect-ratio:1;border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:2px;cursor:pointer;display:grid;place-items:center}
+.pal canvas{width:100%;height:100%}
+details.cat{border-top:1px solid var(--line);margin-top:6px}
+details.cat summary{cursor:pointer;list-style:none;padding:8px 0 4px;font:700 13px/1.2 'Alegreya Sans SC',serif;color:var(--soft)}
+details.cat summary::before{content:'▸ ';}details.cat[open] summary::before{content:'▾ '}
+.row{display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap}
+.row label{min-width:72px;color:var(--soft)}
+.row input[type=range]{flex:1}
+select,input[type=text]{min-height:38px;border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:4px 8px;font-size:16px}
+input[type=text]{width:130px}
+main{grid-area:map;position:relative;background:#000;overflow:hidden;touch-action:none}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block}
+#cv.pan{cursor:grab}#cv.panning{cursor:grabbing}
+.hud{position:absolute;left:10px;bottom:10px;display:flex;gap:6px;flex-wrap:wrap}
+.hud .btn{background:rgba(20,24,18,.82);color:#e6eadb;border-color:#3a4334;min-height:36px}
+.tip{position:absolute;right:10px;top:10px;max-width:280px;background:rgba(20,24,18,.86);color:#e6eadb;border:1px solid #3a4334;border-radius:8px;padding:8px 10px;font-size:13.5px}
+footer{grid-area:foot;display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:5px 12px;font-size:13px;color:var(--soft);background:var(--panel);border-top:1px solid var(--line)}
+footer a{color:var(--moss)}
+.note{font-size:13px;color:var(--soft);margin:6px 0}
+#credwrap{position:relative}#credwrap summary{cursor:pointer;color:var(--moss)}#credits{position:absolute;right:0;bottom:calc(100% + 8px);width:min(420px,90vw);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;line-height:1.6;box-shadow:0 6px 24px rgba(0,0,0,.25);z-index:5}#credits div{margin:2px 0}
+
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel2)}
+.seg button{border:0;background:none;padding:7px 12px;min-height:38px;cursor:pointer;font:inherit;color:var(--soft)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--moss);color:var(--mossink);font-weight:700}
+.seg button:disabled{opacity:.45;cursor:default}
+.seg button:focus-visible{outline:2px solid var(--moss);outline-offset:-2px}
+#ask{position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:20;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;box-shadow:0 10px 32px rgba(0,0,0,.35);width:min(520px,92vw)}
+#ask p{margin:0 0 8px}
+#search{width:100%;min-height:36px;margin:8px 0 2px}
+#toast{position:fixed;left:50%;bottom:46px;transform:translateX(-50%);background:#22271f;color:#eef2e2;border:1px solid #3a4334;padding:8px 14px;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.on{opacity:1}
+.embed-only{display:none}body.embed .embed-only{display:inline-flex}body.embed .solo-only{display:none}
+@media (prefers-reduced-motion:reduce){#toast{transition:none}}
+@media(max-width:760px){body{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) 42vh auto;grid-template-areas:"top" "map" "side" "foot"}aside{border-right:0;border-top:1px solid var(--line)}.pal{grid-template-columns:repeat(6,minmax(0,1fr))}.sws{grid-template-columns:repeat(5,minmax(0,1fr))}.tip{display:none}}
+</style></head><body>
+<header>
+  <h1>Map <b>Forge</b></h1>
+  <button class="btn" id="undo" title="Undo (Ctrl+Z)">&#8630; Undo</button>
+  <button class="btn" id="redo" title="Redo (Ctrl+Y)">&#8631; Redo</button>
+  <div class="seg" id="kinds" role="group" aria-label="What sort of map"><button data-kind="out">Outdoors</button><button data-kind="under">Underground</button><button data-kind="in">Indoors</button></div>
+  <select id="biome" aria-label="The land: which tiles the map is drawn with"></select>
+  <span class="grow"></span>
+  <button class="btn" id="newmap">New</button>
+  <button class="btn" id="open">Open…</button><input type="file" id="file" accept=".json,application/json" hidden>
+  <button class="btn solo-only" id="save">Save map</button>
+  <button class="btn" id="png">Export PNG</button>
+  <button class="btn embed-only" id="close">Close</button>
+  <button class="btn main embed-only" id="use">Use on this scene</button>
+</header>
+<aside>
+  <div class="tabs"><button class="btn on" data-tab="paint">Build</button><button class="btn" data-tab="gen">Generate</button></div>
+  <section id="tab-paint">
+    <h2>Ground</h2>
+    <div class="sws" id="terrain"></div>
+    <div class="row"><label for="bsize">Brush</label><input type="range" id="bsize" min="1" max="7" value="2"><span id="bsizev">2</span></div>
+    <div class="sws" id="tools"></div>
+    <button class="btn" id="flip" style="margin-top:6px" hidden title="Turn it to face the other way (F)">⇋ Flip</button>
+    <p class="note" id="toolnote"></p>
+    <input type="text" id="search" placeholder="Find a piece: barrel, pillar, tree…" aria-label="Find a piece">
+    <div id="cats"></div>
+  </section>
+  <section id="tab-gen" hidden>
+    <h2>What sort of place</h2>
+    <div class="sws" id="themes"></div>
+    <div class="row"><label for="gsize">Size</label><select id="gsize"><option value="24">Small · 24</option><option value="36" selected>Medium · 36</option><option value="48">Large · 48</option><option value="64">Huge · 64</option></select></div>
+    <div class="row"><label for="gdens" id="gdensl">Growth</label><input type="range" id="gdens" min="0" max="100" value="55"></div>
+    <div class="row k-under"><label for="grooms">Rooms</label><select id="grooms"><option value="few">A few big ones</option><option value="some" selected>Some</option><option value="many">Many small ones</option></select></div>
+    <div class="row k-under"><label for="gwide">Corridors</label><select id="gwide"><option value="">Narrow</option><option value="1">Wide</option></select></div>
+    <div class="row k-under"><label for="gdoors">Doorways</label><select id="gdoors"><option value="1" selected>Archways where corridors meet rooms</option><option value="">Open gaps</option></select></div>
+    <div class="row k-out"><label for="gcliff">Edges</label><select id="gcliff"><option value="cliffs" selected>Cliffs into the dark</option><option value="open">Open country to the edge</option></select></div>
+    <div class="row k-out"><label for="ghills">Rises</label><select id="ghills"><option value="none">Flat</option><option value="some" selected>A few rises</option><option value="lots">Hilly</option></select></div>
+    <div class="row k-out"><label for="gwater">Water</label><select id="gwater"><option value="auto" selected>As the place suits</option><option value="river">A river</option><option value="pond">A pond</option><option value="none">None</option></select></div>
+    <div class="row"><label for="gseed">Seed</label><input type="text" id="gseed" value="hollow-ford"><button class="btn" id="dice" title="New seed">&#9858;</button></div>
+    <div class="row"><button class="btn main" id="gen" style="flex:1;justify-content:center">Generate map</button></div>
+    <p class="note">Generating replaces the map (Undo brings it back). It uses the land chosen at the top. Every map is editable afterwards in Build.</p>
+  </section>
+</aside>
+<main><canvas id="cv"></canvas>
+  <div class="hud"><button class="btn" id="zout" aria-label="Zoom out">−</button><button class="btn" id="zin" aria-label="Zoom in">+</button><button class="btn" id="fit">Fit</button><button class="btn" id="grid">Grid</button><button class="btn" id="walls" hidden title="Walls in front of a floor: cut down to see in, or at full height">Full walls</button></div>
+  <div class="tip" id="tip">Drag to paint · right-drag or Space to pan · wheel to zoom · [ ] brush size · Ctrl+Z undo</div>
+</main>
+<footer><span id="status">Loading tiles…</span><span class="grow"></span><details id="credwrap"><summary>Art credits</summary><div id="credits"></div></details></footer>
+<div id="toast" role="status"></div>
+<div id="ask" hidden role="dialog" aria-live="polite"><p id="askText"></p><div class="row" style="justify-content:flex-end;margin:0"><button class="btn" id="askNo">Keep this map</button><button class="btn" id="askBlank">Start empty</button><button class="btn main" id="askGen">Generate one</button></div></div>
+<script src="iso-data.js"></script>
+<script src="iso-core.js"></script>
+<script>
+{
+const C = IsoCore, DATA = C.data();
+const $ = s => document.querySelector(s);
+const cv = $('#cv'), ctx = cv.getContext('2d');
+const { VOID, GRASS, PATH, WATER, PREFABS, GROUND_IDS } = C;
+const EMBED = new URLSearchParams(location.search).has('embed') && window.parent !== window;
+if (EMBED) document.body.classList.add('embed');
+const NEWSCENE = EMBED && new URLSearchParams(location.search).has('new');   // opened from the new scene wizard: the map makes a scene
+let m = C.blank(36, 36, 'grass');
+
+// ───── undo
+let undo = [], redo = [];
+const snap = () => ({ w: m.w, h: m.h, biome: m.biome, terr: m.terr.slice(), over: m.over.slice(), obj: m.obj.slice(), edge: (m.edge || new Uint8Array(m.w * m.h)).slice(), flip: (m.flip || new Uint8Array(m.w * m.h)).slice(), lv: m.lv ? m.lv.slice() : null });
+function restore(s) { m = Object.assign(C.blank(s.w, s.h, s.biome), { terr: s.terr.slice(), over: s.over.slice(), obj: s.obj.slice(), edge: s.edge.slice(), flip: s.flip.slice(), lv: s.lv ? s.lv.slice() : undefined }); sel = null; C.compute(m); syncLand(); buildPalette(); buildThemes(); draw(); autosave(); btns(); }
+// (a wall drag starts again from the map as it was when the drag began, so its line can shorten or turn)
+function restoreLast() { const s = undo[undo.length - 1]; if (!s) return; m.terr.set(s.terr); m.edge.set(s.edge); m.over.set(s.over); m.obj.set(s.obj); m.flip.set(s.flip); m.lv = s.lv ? s.lv.slice() : undefined; }
+function push() { undo.push(snap()); if (undo.length > 60) undo.shift(); redo = []; btns(); }
+function btns() { $('#undo').disabled = !undo.length; $('#redo').disabled = !redo.length; }
+$('#undo').onclick = () => { if (!undo.length) return; redo.push(snap()); restore(undo.pop()); };
+$('#redo').onclick = () => { if (!redo.length) return; undo.push(snap()); restore(redo.pop()); };
+
+// ───── drawing
+let cam = { x: 0, y: 300, z: 1 }, showGrid = false, hover = null, fullWalls = false;
+const cellXY = (x, y) => [(x - y) * 32, (x + y) * 16 + 16];
+const spr = (c, id, cx, cy, a) => C.drawSprite(c, C.sprite(m.biome, id), cx, cy, a);
+function diamond(c, x, y) { const [cx, cy] = cellXY(x, y); c.beginPath(); c.moveTo(cx, cy - 16); c.lineTo(cx + 32, cy); c.lineTo(cx, cy + 16); c.lineTo(cx - 32, cy); c.closePath(); }
+function draw() {
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(r.width * dpr) || cv.height !== Math.round(r.height * dpr)) { cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); }
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cv.width, cv.height);
+  if (!m.g) return;
+  const z = cam.z * dpr; ctx.setTransform(z, 0, 0, z, cv.width / 2 - cam.x * z, cv.height / 2 - cam.y * z);
+  ctx.imageSmoothingEnabled = cam.z < 1;
+  const view = [cam.x - r.width / 2 / cam.z, cam.y - r.height / 2 / cam.z, cam.x + r.width / 2 / cam.z, cam.y + r.height / 2 / cam.z];
+  C.paint(ctx, m, { ox: 0, oy: 16, view, uncut: fullWalls });
+  if (showGrid) { ctx.strokeStyle = 'rgba(255,255,255,.16)'; ctx.lineWidth = 1 / cam.z; for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) { diamond(ctx, x, y); ctx.stroke(); } }
+  ctx.strokeStyle = 'rgba(166,194,90,.35)'; ctx.lineWidth = 1.5 / cam.z; ctx.beginPath();
+  const [ax, ay] = cellXY(0, 0), [bx, by] = cellXY(m.w - 1, 0), [ex, ey] = cellXY(m.w - 1, m.h - 1), [fx, fy] = cellXY(0, m.h - 1);
+  ctx.moveTo(ax, ay - 16); ctx.lineTo(bx + 32, by); ctx.lineTo(ex, ey + 16); ctx.lineTo(fx - 32, fy); ctx.closePath(); ctx.stroke();
+  if (hover && C.inb(m, hover[0], hover[1])) ghost();
+  if (sel && tool.kind === 'select') selection();
+}
+// the piece under a cell: an object (its front cell, and every cell it covers) or, failing that, a piece laid on the ground
+function pieceAt(x, y) {
+  if (!C.inb(m, x, y)) return null;
+  const o = C.ownerOf(m, x, y); if (o) return { layer: 'obj', x: o[0], y: o[1] };
+  return m.over[y * m.w + x] && !(m.over[y * m.w + x] >= 192 && m.over[y * m.w + x] < 200) ? { layer: 'over', x, y } : null;   // (not a bridge's own pieces)
+}
+const pieceSprite = p => { const i = p.y * m.w + p.x; return p.layer === 'obj' ? (m.flip && m.flip[i] ? C.mirrored(C.sprite(m.biome, m.vobj[i] || m.obj[i])) : C.sprite(m.biome, m.vobj[i] || m.obj[i])) : C.sprite(m.biome, m.over[i]); };
+function outline(p, col, at) {
+  const s = pieceSprite(p), fw = s ? s.fw : 1, fh = s ? s.fh : 1, [x, y] = at || [p.x, p.y];
+  ctx.save(); ctx.lineWidth = 2.5 / cam.z; ctx.strokeStyle = col; ctx.fillStyle = col.replace(/[\d.]+\)$/, '.14)');
+  for (let j = 0; j < fh; j++) for (let k = 0; k < fw; k++) { diamond(ctx, x - k, y - j); ctx.fill(); ctx.stroke(); }
+  ctx.restore();
+}
+function selection() {
+  const si = sel.y * m.w + sel.x; if (!C.inb(m, sel.x, sel.y) || !(sel.layer === 'obj' ? m.obj[si] : m.over[si])) { sel = null; return; }
+  outline(sel, 'rgba(240,195,106,1)');
+  if (drag && drag.to && (drag.to[0] !== sel.x || drag.to[1] !== sel.y)) { const [cx, cy] = cellXY(drag.to[0], drag.to[1]); C.drawSprite(ctx, pieceSprite(sel), cx, cy, .6); outline(sel, fits(sel, drag.to) ? 'rgba(205,232,138,1)' : 'rgba(255,122,106,1)', drag.to); }
+}
+// the brush as it will be laid: mirrored if it's been flipped (and has no turned twin)
+const brushSprite = () => { const s = C.sprite(m.biome, tool.id); return tool.kind === 'obj' && brushFlip ? C.mirrored(s) : s; };
+function brushCells(x, y) { const r = brush - 1, out = []; for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (Math.abs(dx) + Math.abs(dy) <= r + (r > 1 ? 1 : 0) && C.inb(m, x + dx, y + dy)) out.push([x + dx, y + dy]); return out; }
+function ghost() {
+  const [x, y] = hover;
+  ctx.lineWidth = 2 / cam.z; ctx.strokeStyle = tool.kind === 'erase' ? '#ff7a6a' : '#cde88a'; ctx.fillStyle = 'rgba(205,232,138,.12)';
+  if ((tool.kind === 'wall' || tool.kind === 'door') && !indoor()) { const [a, b] = mode === 'paint' && tool.kind === 'wall' ? underLine(x, y) : [x, y]; diamond(ctx, a, b); ctx.fillStyle = tool.kind === 'door' ? 'rgba(240,195,106,.25)' : 'rgba(205,232,138,.25)'; ctx.fill(); ctx.stroke(); return; }
+  if ((tool.kind === 'wall' || tool.kind === 'door') && hoverF) { const e = mode === 'paint' && edgeLine ? (edgeLine[0] === 'W' ? ['W', edgeLine[1], Math.floor(hoverF[1])] : ['N', Math.floor(hoverF[0]), edgeLine[2]]) : edgeAt(hoverF); if (e) { const [cx, cy] = cellXY(e[1], e[2]); ctx.lineWidth = 5 / cam.z; ctx.strokeStyle = tool.kind === 'door' ? '#f0c36a' : '#cde88a'; ctx.beginPath(); if (e[0] === 'W') { ctx.moveTo(cx - 32, cy); ctx.lineTo(cx, cy - 16); } else { ctx.moveTo(cx, cy - 16); ctx.lineTo(cx + 32, cy); } ctx.stroke(); } return; }
+  if (tool.kind === 'terrain' || tool.kind === 'erase' || tool.kind === 'raise' || tool.kind === 'lower') { for (const [a, b] of brushCells(x, y)) { diamond(ctx, a, b); ctx.fill(); ctx.stroke(); } return; }
+  if (tool.kind === 'select' || tool.kind === 'pipette') { const h = pieceAt(x, y); if (h && !(sel && drag)) outline(h, tool.kind === 'pipette' ? 'rgba(159,208,255,.9)' : 'rgba(240,195,106,.6)'); diamond(ctx, x, y); ctx.stroke(); return; }
+  if (tool.kind === 'obj' || tool.kind === 'groundpiece') {
+    const s = brushSprite(); const [cx, cy] = cellXY(x, y); C.drawSprite(ctx, s, cx, cy, .72);
+    if (s) for (let j = 0; j < s.fh; j++) for (let k = 0; k < s.fw; k++) { diamond(ctx, x - k, y - j); ctx.stroke(); }
+    return;
+  }
+  if (tool.kind === 'prefab') for (const [dx, dy, id] of PREFABS[tool.id].cells) { const [cx, cy] = cellXY(x + dx, y + dy); spr(ctx, id, cx, cy, .72); }
+  diamond(ctx, x, y); ctx.stroke();
+}
+let raf = 0; const redraw = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); };
+
+// ───── tools
+let tool = { kind: 'terrain', id: GRASS }, brush = 2, brushFlip = 0, sel = null, drag = null, strokeLv = 1;
+const inside = () => C.kindOf(m.biome) !== 'out';   // underground or indoors
+const TERRAIN_OUT = [[GRASS, 'Ground', 18], [PATH, 'Stone path', 34], [WATER, 'Water', 181], [VOID, 'Void', 0]];
+const TERRAIN_IN = [[GRASS, 'Stone floor', 301], [PATH, 'Boards', 380], [VOID, 'Rock', 0]];
+const TOOLS_OUT = [['bridge', 'Bridge'], ['erase', 'Erase'], ['select', 'Select'], ['pipette', 'Pipette'], ['pan', 'Pan']];
+const TOOLS_IN = [['erase', 'Erase'], ['select', 'Select'], ['pipette', 'Pipette'], ['pan', 'Pan']];
+// underground: walls (a line of rock a cell thick), and doorways (archways) where the land has them
+const toolsUnder = () => [['wall', 'Wall'], ...(natural() ? [] : [['door', 'Door']]), ...TOOLS_IN];
+const natural = () => !!DATA.biomes[m.biome].natural;
+const TOOLS_INDOOR = [['wall', 'Wall'], ['door', 'Door'], ['erase', 'Erase'], ['select', 'Select'], ['pipette', 'Pipette'], ['pan', 'Pan']];
+const TERRAIN_INDOOR = [[GRASS, 'Stone floor', 301], [PATH, 'Boards', 380], [VOID, 'Outside', 0]];
+const indoor = () => C.kindOf(m.biome) === 'in';
+const NOTES = { terrain: 'Paint the ground. Banks form round water by themselves; cliffs form wherever land meets the void.', terrainIn: 'Paint floor out of the rock: walls rise round it by themselves. Walls in front of a floor are cut down so you can see in.', bridge: 'Click a river to lay a bridge straight across its narrowest way.', raise: 'Cliffs: drag to raise the land a level above where you started (up to three); the cliffs follow its edge. [ ] brush size.', lower: 'Cliffs: drag to bring the land down a level below where you started.', erase: 'Clears objects and bridges under the brush (the ground stays).', select: 'Click a piece to select it, drag it to move it. F flips it, Delete removes it, Esc lets go.', pipette: 'Click a piece on the map to take it (and its facing) as your brush.', pan: 'Drag to move about the map.', terrainIndoor: 'Paint the floor of the building: its outer walls go up round the edge by themselves.', wall: 'Click or drag along the lines between cells to put up walls between rooms; click a wall to take it down.', door: 'Click a wall (or the outer wall) to put a door in it; click a door to take it out.', obj: 'Click to place; drag to scatter. F (or Flip) turns it to face the other way. Big pieces sit on the cell you click and reach back from it. Right-drag pans.', prefab: 'Click to place it; its top corner goes where you click.', wallUnder: 'Drag to build a wall a cell thick (it keeps to a straight line); start on a wall to knock it through to floor instead.', doorUnder: 'Click a gap in a wall (or a wall with floor either side) to put an archway in it; click again for a gate, and again to clear it.', raiseUnder: 'Ledges: drag to raise the cave floor a level above where you started (up to three); a rock ledge forms along its front.', lowerUnder: 'Ledges: drag to bring the cave floor down a level below where you started.', groundpiece: 'Bridge and jetty pieces sit in place of the ground: lay them over water or bank.' };
+function thumb(drawFn, w, h) { const c = document.createElement('canvas'); const d = window.devicePixelRatio || 1; c.width = w * d; c.height = h * d; const g = c.getContext('2d'); g.scale(d, d); drawFn(g, w, h); return c; }
+function fitSprites(g, w, h, list) {
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const [cx, cy, id] of list) { const t = C.sprite(m.biome, id); if (!t) continue; x0 = Math.min(x0, cx - t.ox); y0 = Math.min(y0, cy - t.oy); x1 = Math.max(x1, cx - t.ox + t.w); y1 = Math.max(y1, cy - t.oy + t.h); }
+  if (x0 > x1) return;
+  const s = Math.min((w - 4) / (x1 - x0), (h - 4) / (y1 - y0), 1.2); g.translate(w / 2 - (x0 + x1) / 2 * s, h / 2 - (y0 + y1) / 2 * s); g.scale(s, s);
+  for (const [cx, cy, id] of list) spr(g, id, cx, cy);
+}
+const note = k => (k === 'terrain' && inside() ? (indoor() ? NOTES.terrainIndoor : NOTES.terrainIn) : inside() && !indoor() && NOTES[k + 'Under'] ? NOTES[k + 'Under'] : NOTES[k]) || '';
+function select(t, el) { if (t.kind !== 'select') sel = null; if (t.kind === 'obj' && !(tool.kind === 'obj' && tool.id === t.id)) brushFlip = 0; tool = t; $('#flip').hidden = !(t.kind === 'obj' || t.kind === 'select'); document.querySelectorAll('.sw.on,.pal button.on').forEach(b => b.classList.remove('on')); if (el) el.classList.add('on'); $('#toolnote').textContent = note(t.kind); cv.classList.toggle('pan', t.kind === 'pan'); redraw(); }
+// the tile sheet's own pieces, by what they are
+const CATS = [
+  ['Trees', [252, 253, 254, 255, 248, 249, 250, 251, 240, 241, 242, 243, 244, 245, 246, 247]],
+  ['Shrubs & grass', [112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127]],
+  ['Rocks', [128, 129, 130, 131, 132, 133, 134, 135]],
+  ['Cabins, tents & towers', ['cabin1', 'cabin2', 'tent1', 'tent2', 'tower', 'temple']],
+  ['Camp & town', [96, 97, 98, 99, 100, 101, 102, 103, 136, 137, 138, 139]],
+  ['Fences', [104, 105, 106, 107, 108, 109, 110, 111]],
+  ['Graves', [140, 141, 142, 143]],
+  ['Boats', [170, 171, 169, 172, 168, 173]],
+  ['Bridges & jetties', [192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207], 'ground'],
+  ['Caves (set in cliffs)', ['cave1', 'cave2', 'cave3', 'cave4']],
+  ['Cliff pieces', [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71]]
+];
+// inside: the dungeon sheet's own pieces
+const CATS_IN = [
+  ['Cave growths & carts', [668, 669, 670, 671, 672, 673, 664, 665, 666, 667, 674, 675, 676, 677, 660, 661, 662, 663, 678, 679]],
+  ['Mine tracks', [356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370, 371], 'ground'],
+  ['Pillars', [610, 611, 612, 613, 614, 615, 616, 617, 618, 619, 620, 621, 516, 572, 573, 574]],
+  ['Statues & torches', [628, 629, 630, 631, 632, 633, 634, 635, 636, 637]],
+  ['Archways', [638, 639, 640, 646, 643, 644, 645, 647]],
+  ['Rubble', [575, 576, 577, 578, 579, 580, 581, 533, 534, 535, 536, 537, 538, 539, 540, 541, 542, 543, 544, 545, 546, 547]],
+  ['Carpet', [405], 'ground'],
+  ['Floor tiles', [314, 315, 316, 317, 318, 319, 348, 349, 350, 351, 352, 353, 354, 355, 380, 381, 382, 383, 384, 385, 386, 387], 'ground']
+];
+// indoors: the building's own pieces
+const CATS_INDOOR = [
+  ['Carpet', [405], 'ground'],
+  ['Floor tiles', [300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 380, 381, 382, 383, 384, 385, 386, 387], 'ground'],
+  ['Stair wells', [740, 741, 742, 743]],
+  ['Wall pieces', [700, 701, 702, 703, 704, 705, 706, 707, 708, 712, 713, 714, 715, 716, 717, 718, 720, 744]]
+];
+// the props atlas: houses, carts, wells, stalls, goods and fittings (in their snowy versions in the snow)
+function propCats() {
+  const by = {};
+  for (const k of Object.keys(DATA.props.items)) { const id = +k; if (id >= 1500 && id < 1700) continue; const p = DATA.props.items[k]; const v = C.forBiome(m.biome, id); (by[p[9]] = by[p[9]] || []); if (!by[p[9]].includes(v)) by[p[9]].push(v); }   // (a summer piece and its winter twin show once)
+  const k = C.kindOf(m.biome), winter = !!DATA.biomes[m.biome].winter;
+  const list = k === 'under' ? ['Lights', 'Furniture', 'Beds', 'Tableware', 'Stairs', 'Goods', 'Fittings', 'Stones', 'Ruins'] : k === 'in' ? ['Furniture', 'Beds', 'Tableware', 'Lights', 'Goods', 'Fittings', 'Stairs'] : ['Houses', 'Trees & plants', 'Ruins', 'Carts, wells & stalls', 'Goods', 'Fences & signs', 'Lights', 'Fittings', 'Furniture', 'Stones'];
+  if (winter && k !== 'in') list.push('Snowy things');
+  return list.filter(c => by[c]).map(c => [c, by[c]]);
+}
+const openCats = new Set(['Trees', 'Houses', 'Pillars', 'Furniture', 'Cave growths & carts']);
+function buildPalette() {
+  const tw = $('#terrain'); tw.replaceChildren();
+  if (tool.kind === 'terrain' && inside() && tool.id === WATER) tool = { kind: 'terrain', id: GRASS };
+  for (const [v, name, id] of (indoor() ? TERRAIN_INDOOR : inside() ? TERRAIN_IN : TERRAIN_OUT)) {
+    const b = document.createElement('button'); b.className = 'sw' + (tool.kind === 'terrain' && tool.id === v ? ' on' : '');
+    const tid = id && !C.has(m.biome, id) && DATA.biomes[m.biome].tile4 ? DATA.biomes[m.biome].tile4 : id;
+    b.append(thumb((g, w, h) => { if (tid) fitSprites(g, w, h, [[0, 0, tid]]); else { g.fillStyle = '#000'; g.beginPath(); g.moveTo(w / 2, 2); g.lineTo(w - 2, h / 2); g.lineTo(w / 2, h - 2); g.lineTo(2, h / 2); g.fill(); } }, 56, 34), Object.assign(document.createElement('span'), { textContent: name }));
+    b.onclick = () => select({ kind: 'terrain', id: v }, b); tw.append(b);
+  }
+  const tl = $('#tools'); tl.replaceChildren();
+  if ((tool.kind === 'bridge' && inside()) || ((tool.kind === 'wall' || tool.kind === 'door') && !inside()) || (tool.kind === 'door' && natural()) || tool.kind === 'raise' || tool.kind === 'lower') tool = { kind: 'terrain', id: GRASS };
+  for (const [k, name] of (indoor() ? TOOLS_INDOOR : inside() ? toolsUnder() : TOOLS_OUT)) { const b = document.createElement('button'); b.className = 'sw' + (tool.kind === k ? ' on' : ''); b.style.padding = '8px 2px'; b.textContent = name; b.onclick = () => select({ kind: k }, b); tl.append(b); }
+  const cats = $('#cats'); cats.replaceChildren();
+  for (const [name, ids, layer] of [...(indoor() ? CATS_INDOOR : inside() ? CATS_IN : []), ...propCats(), ...(inside() ? [] : CATS)]) {
+    const q = $('#search').value.trim().toLowerCase();
+    const label = id => (typeof id === 'string' ? PREFABS[id].name : ((C.sprite(m.biome, id) || {}).name || '')) + ' ' + name;
+    const items = ids.filter(id => (typeof id === 'string' ? C.prefabOK(m.biome, id) : C.has(m.biome, id)) && (!q || label(id).toLowerCase().includes(q)));
+    if (!items.length) continue;
+    const det = document.createElement('details'); det.className = 'cat'; det.open = openCats.has(name) || !!q;
+    det.ontoggle = () => det.open ? openCats.add(name) : openCats.delete(name);
+    const sum = document.createElement('summary'); sum.textContent = name + ' · ' + items.length; const p = document.createElement('div'); p.className = 'pal';
+    for (const id of items) {
+      const isPre = typeof id === 'string', s = !isPre && C.sprite(m.biome, id);
+      const b = document.createElement('button'); b.title = isPre ? PREFABS[id].name : (s && s.name) || name; b.dataset.id = id;
+      b.append(thumb((g, w, h) => fitSprites(g, w, h, isPre ? PREFABS[id].cells.map(([dx, dy, t]) => [...cellXY(dx, dy), t]) : [[0, 0, id]]), 64, 64));
+      b.onclick = () => select(isPre ? { kind: 'prefab', id } : { kind: layer === 'ground' ? 'groundpiece' : 'obj', id }, b);
+      if ((tool.kind === 'obj' || tool.kind === 'groundpiece') && tool.id === id) b.classList.add('on');
+      p.append(b);
+    }
+    det.append(sum, p); cats.append(det);
+  }
+  $('#toolnote').textContent = note(tool.kind);
+  $('#walls').hidden = !inside();
+}
+$('#search').oninput = () => buildPalette();
+$('#bsize').oninput = e => { brush = +e.target.value; $('#bsizev').textContent = brush; redraw(); };
+
+function clearAt(a, b) {   // whatever covers this cell (a whole house, if it's one of a house's cells)
+  const o = C.ownerOf(m, a, b); if (o) { m.obj[o[1] * m.w + o[0]] = 0; m.flip[o[1] * m.w + o[0]] = 0; }
+  m.obj[b * m.w + a] = 0; m.flip[b * m.w + a] = 0; m.over[b * m.w + a] = 0; C.compute(m);
+}
+// the edge nearest a point given in cells: ['W', x, y] (the line towards x - 1) or ['N', x, y] (towards y - 1)
+function edgeAt([fx, fy]) {
+  const x = Math.floor(fx), y = Math.floor(fy), u = fx - x, v = fy - y;
+  const d = [[u, 'W', x, y], [1 - u, 'W', x + 1, y], [v, 'N', x, y], [1 - v, 'N', x, y + 1]].sort((a, b) => a[0] - b[0])[0];
+  return C.inb(m, d[2], d[3]) && C.inb(m, d[1] === 'W' ? d[2] - 1 : d[2], d[1] === 'N' ? d[3] - 1 : d[3]) ? d.slice(1) : null;
+}
+let edgeMode = 0, edgeLine = null;   // what a drag with the wall or door tool does (1 put up, -1 take down), and the line it keeps to
+function edgeTool(f, first) {
+  let e = edgeAt(f); if (first) edgeLine = e;
+  else if (edgeLine) { e = edgeLine[0] === 'W' ? ['W', edgeLine[1], Math.floor(f[1])] : ['N', Math.floor(f[0]), edgeLine[2]]; if (!C.inb(m, e[1], e[2])) return; }
+  if (!e) return;
+  const [k, x, y] = e, i = y * m.w + x, wb = k === 'W' ? 1 : 2, db = k === 'W' ? 4 : 8, isF = (a, b) => C.tAt(m, a, b) !== VOID;
+  const other = k === 'W' ? [x - 1, y] : [x, y - 1], inner = isF(x, y) && isF(other[0], other[1]), outer = isF(x, y) !== isF(other[0], other[1]);
+  if (tool.kind === 'wall') {
+    if (!inner) { if (first) toast(outer ? 'The outer walls go up by themselves' : 'Walls go between floor cells'); return; }
+    if (first) edgeMode = m.edge[i] & wb ? -1 : 1;
+    m.edge[i] = edgeMode > 0 ? m.edge[i] | wb : m.edge[i] & ~(wb | db);
+  } else {
+    if (!inner && !outer) return;
+    if (first) edgeMode = m.edge[i] & db ? -1 : 1;
+    m.edge[i] = edgeMode > 0 ? m.edge[i] | db | (inner ? wb : 0) : m.edge[i] & ~db;
+  }
+}
+// underground: the wall tool lays rock (or, started on rock, floor) a cell thick along a straight line from where the drag
+// began; the door tool puts an archway in a gap a cell wide, then a gate, then clears it
+let underStart = null, underMode = 1;
+function underLine(x, y) { if (!underStart) return [x, y]; const [sx, sy] = underStart; return Math.abs(x - sx) >= Math.abs(y - sy) ? [x, sy] : [sx, y]; }
+function underTool(x, y, first) {
+  const I = (a, b) => b * m.w + a, fl = (a, b) => C.tAt(m, a, b) !== VOID;
+  if (tool.kind === 'wall') {
+    if (first) { underStart = [x, y]; underMode = fl(x, y) ? 1 : -1; }
+    const [sx, sy] = underStart, [ex, ey] = underLine(x, y);
+    for (let a = Math.min(sx, ex); a <= Math.max(sx, ex); a++) for (let b = Math.min(sy, ey); b <= Math.max(sy, ey); b++) {
+      if (!C.inb(m, a, b)) continue;
+      if (underMode > 0) { clearAt(a, b); m.terr[I(a, b)] = VOID; m.over[I(a, b)] = 0; m.edge[I(a, b)] = 16; if (m.lv) m.lv[I(a, b)] = 0; }
+      else if (!fl(a, b)) { m.terr[I(a, b)] = GRASS; m.edge[I(a, b)] = 0; if (m.lv) m.lv[I(a, b)] = 0; }
+    }
+    return;
+  }
+  if (!first) return;
+  const wx = !fl(x - 1, y) && !fl(x + 1, y) && fl(x, y - 1) && fl(x, y + 1), wy = !fl(x, y - 1) && !fl(x, y + 1) && fl(x - 1, y) && fl(x + 1, y);
+  if (!wx && !wy) { toast('Click a gap a cell wide in a wall, or a wall with floor on both sides'); return; }
+  const list = (wx ? C.DOORS.x : C.DOORS.y).slice(0, 2).filter(id => C.has(m.biome, id)), cur = m.obj[I(x, y)], at = list.indexOf(cur);
+  if (!list.length) { toast('This land has no archways'); return; }
+  if (!fl(x, y)) { m.terr[I(x, y)] = GRASS; m.edge[I(x, y)] = 0; }
+  if (at < 0) clearAt(x, y);
+  m.obj[I(x, y)] = at < 0 ? list[0] : at + 1 < list.length ? list[at + 1] : 0; if (m.flip) m.flip[I(x, y)] = 0;
+}
+function applyAt(x, y, first) {
+  if (!C.inb(m, x, y)) return;
+  const k = tool.kind, I = (a, b) => b * m.w + a;
+  if (k === 'terrain') { for (const [a, b] of brushCells(x, y)) { m.terr[I(a, b)] = tool.id; m.over[I(a, b)] = 0; if (tool.id === WATER || tool.id === VOID) { clearAt(a, b); if (m.edge) m.edge[I(a, b)] = 0; } } }
+  else if (k === 'erase') { for (const [a, b] of brushCells(x, y)) { clearAt(a, b); if (m.edge && indoor()) m.edge[I(a, b)] = 0; } }
+  else if ((k === 'wall' || k === 'door') && !indoor()) underTool(x, y, first);
+  else if (k === 'wall' || k === 'door') { if (hoverF) edgeTool(hoverF, first); }
+  else if (k === 'obj') {
+    const s = brushSprite(), big = s && (s.fw > 1 || s.fh > 1);
+    if (big && !first) return;
+    if (first || !m.obj[I(x, y)]) {
+      if (big) for (let j = 0; j < s.fh; j++) for (let q = 0; q < s.fw; q++) if (C.inb(m, x - q, y - j)) clearAt(x - q, y - j);
+      m.obj[I(x, y)] = tool.id; m.flip[I(x, y)] = brushFlip;
+    }
+  }
+  else if (k === 'groundpiece') m.over[I(x, y)] = tool.id;
+  else if (k === 'prefab' && first) { const P = PREFABS[tool.id]; for (const [dx, dy, id] of P.cells) if (C.inb(m, x + dx, y + dy)) (P.ground ? m.over : m.obj)[I(x + dx, y + dy)] = id; }
+  else if (k === 'raise' || k === 'lower') {
+    // the stroke takes the land to one level above (or below) where it started, so a drag lays one even rise
+    if (first) { const v = m.lv ? m.lv[I(x, y)] : 0; strokeLv = Math.max(0, Math.min(3, v + (k === 'raise' ? 1 : -1))); }
+    if (!m.lv) m.lv = new Uint8Array(m.w * m.h);
+    for (const [a, b] of brushCells(x, y)) if (m.terr[I(a, b)] !== VOID) m.lv[I(a, b)] = strokeLv;
+  }
+  else if (k === 'bridge' && first) { if (!C.bridgeAt(m, x, y)) toast('Click water with land straight across on both sides'); }
+  else if (k === 'pipette' && first) { const o = C.ownerOf(m, x, y), id = o ? m.obj[I(o[0], o[1])] : m.over[I(x, y)]; if (id) { const t = { kind: o ? 'obj' : 'groundpiece', id }; select(t); brushFlip = o && m.flip ? m.flip[I(o[0], o[1])] : 0; markBrush(); toast('Took it as your brush: click to place'); } }
+  C.compute(m); redraw();
+}
+
+// ───── pointer: paint, pan, zoom
+const pts = new Map(); let mode = null, last = null, lastCell = null, pinch = null, spaceDown = false;
+function toWorld(px, py) { const r = cv.getBoundingClientRect(); return [cam.x + (px - r.left - r.width / 2) / cam.z, cam.y + (py - r.top - r.height / 2) / cam.z]; }
+function toCellF(px, py) { const [wx, wy] = toWorld(px, py); return [(wx / 32 + (wy - 16) / 16 + 1) / 2, ((wy - 16) / 16 + 1 - wx / 32) / 2]; }
+let hoverF = null, lastEdge = '';
+function toCell(px, py) { const [wx, wy] = toWorld(px, py); return [Math.floor((wx / 32 + (wy - 16) / 16 + 1) / 2), Math.floor(((wy - 16) / 16 + 1 - wx / 32) / 2)]; }
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pts.size === 2) { mode = 'pinch'; const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), z: cam.z }; return; }
+  if (e.button === 2 || e.button === 1 || spaceDown || tool.kind === 'pan') { mode = 'pan'; last = [e.clientX, e.clientY]; cv.classList.add('panning'); return; }
+  if (e.button !== 0) return;
+  if (tool.kind === 'pipette') { const c = toCell(e.clientX, e.clientY); applyAt(c[0], c[1], true); return; }
+  if (tool.kind === 'select') { const c = toCell(e.clientX, e.clientY), p = pieceAt(c[0], c[1]); sel = p; drag = p ? { from: c, to: [p.x, p.y] } : null; mode = p ? 'move' : null; redraw(); return; }
+  mode = 'paint'; push(); hoverF = toCellF(e.clientX, e.clientY); lastEdge = Math.floor(hoverF[0]) + ',' + Math.floor(hoverF[1]); lastCell = toCell(e.clientX, e.clientY); applyAt(lastCell[0], lastCell[1], true);
+});
+cv.addEventListener('pointermove', e => {
+  if (pts.has(e.pointerId)) pts.set(e.pointerId, [e.clientX, e.clientY]);
+  if (mode === 'pinch' && pts.size === 2) { const [a, b] = [...pts.values()]; cam.z = Math.max(.25, Math.min(3, pinch.z * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch.d)); redraw(); return; }
+  if (mode === 'pan') { cam.x -= (e.clientX - last[0]) / cam.z; cam.y -= (e.clientY - last[1]) / cam.z; last = [e.clientX, e.clientY]; redraw(); return; }
+  const c = toCell(e.clientX, e.clientY); hover = c; hoverF = toCellF(e.clientX, e.clientY);
+  if (mode === 'move' && drag) drag.to = [sel.x + c[0] - drag.from[0], sel.y + c[1] - drag.from[1]];
+  if (mode === 'paint' && tool.kind === 'wall' && !indoor() && (c[0] !== lastCell[0] || c[1] !== lastCell[1])) { lastCell = c; restoreLast(); applyAt(c[0], c[1], false); }
+  else if (mode === 'paint' && (tool.kind === 'wall' || tool.kind === 'door') && indoor()) { const ek = Math.floor(hoverF[0]) + ',' + Math.floor(hoverF[1]); if (ek !== lastEdge) { lastEdge = ek; applyAt(c[0], c[1], false); } }
+  if (mode === 'paint' && (c[0] !== lastCell[0] || c[1] !== lastCell[1]) && ['terrain', 'erase', 'obj', 'groundpiece', 'raise', 'lower'].includes(tool.kind)) { lastCell = c; applyAt(c[0], c[1], false); }
+  status(c); redraw();
+});
+function end(e) {
+  pts.delete(e.pointerId);
+  if (mode === 'move' && drag) { const to = drag.to; drag = null; if (to && (to[0] !== sel.x || to[1] !== sel.y)) { if (fits(sel, to)) moveSel(to); else toast('It won\'t fit there'); } }
+  if (mode === 'paint') { if (tool.kind === 'terrain') { C.fixWater(m); C.compute(m); } autosave(); }
+  if (pts.size === 0) { mode = null; cv.classList.remove('panning'); }
+  redraw();
+}
+cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+cv.addEventListener('pointerleave', () => { hover = null; redraw(); });
+cv.addEventListener('wheel', e => { e.preventDefault(); const before = toWorld(e.clientX, e.clientY); cam.z = Math.max(.25, Math.min(3, cam.z * Math.exp(-e.deltaY * .0015))); const after = toWorld(e.clientX, e.clientY); cam.x += before[0] - after[0]; cam.y += before[1] - after[1]; redraw(); }, { passive: false });
+const zoomBy = f => { cam.z = Math.max(.25, Math.min(3, cam.z * f)); redraw(); };
+$('#zin').onclick = () => zoomBy(1.25); $('#zout').onclick = () => zoomBy(.8);
+function fit() { const r = cv.getBoundingClientRect(); const mw = (m.w + m.h) * 32, mh = (m.w + m.h) * 16 + 120; cam.x = (m.w - m.h) * 16; cam.y = (m.w + m.h) * 8 - 40; cam.z = Math.max(.25, Math.min(1.4, Math.min(r.width / mw, r.height / mh) * .95)); redraw(); }
+$('#fit').onclick = fit;
+$('#walls').onclick = e => { fullWalls = !fullWalls; e.currentTarget.classList.toggle('on', fullWalls); redraw(); };
+$('#grid').onclick = e => { showGrid = !showGrid; e.currentTarget.classList.toggle('on', showGrid); redraw(); };
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select')) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); (e.shiftKey ? $('#redo') : $('#undo')).click(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); $('#redo').click(); }
+  else if (e.key === '[' || e.key === ']') { brush = Math.max(1, Math.min(7, brush + (e.key === ']' ? 1 : -1))); $('#bsize').value = brush; $('#bsizev').textContent = brush; redraw(); }
+  else if (e.code === 'Space') { spaceDown = true; cv.classList.add('pan'); e.preventDefault(); }
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && sel && tool.kind === 'select') { e.preventDefault(); push(); const i = sel.y * m.w + sel.x; if (sel.layer === 'obj') { m.obj[i] = 0; m.flip[i] = 0; } else m.over[i] = 0; sel = null; C.compute(m); autosave(); redraw(); }
+  else if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey) flip();
+  else if (e.key === 'Escape' && sel) { sel = null; drag = null; redraw(); }
+  else if (e.key === 'Escape' && EMBED) $('#close').click();
+});
+addEventListener('keyup', e => { if (e.code === 'Space') { spaceDown = false; cv.classList.toggle('pan', tool.kind === 'pan'); } });
+addEventListener('resize', redraw);
+// would the selected piece fit with its front cell at (x, y)? (on the map; only over cells it covers now or that are clear
+// of other objects; an object on the floor, not off it)
+function fits(p, [x, y]) {
+  const s = pieceSprite(p), fw = s ? s.fw : 1, fh = s ? s.fh : 1, me = p.y * m.w + p.x + 1;
+  for (let j = 0; j < fh; j++) for (let k = 0; k < fw; k++) {
+    const a = x - k, b = y - j; if (!C.inb(m, a, b)) return false;
+    if (p.layer === 'obj') { const o = m.occ[b * m.w + a]; if ((o && o !== me) || C.tAt(m, a, b) === VOID) return false; }
+  }
+  return true;
+}
+function moveSel([x, y]) {
+  push(); const i = sel.y * m.w + sel.x, n = y * m.w + x;
+  if (sel.layer === 'obj') { const id = m.obj[i], f = m.flip[i]; m.obj[i] = 0; m.flip[i] = 0; m.obj[n] = id; m.flip[n] = f; }
+  else { const id = m.over[i]; m.over[i] = 0; m.over[n] = id; }
+  sel = { layer: sel.layer, x, y }; C.compute(m); autosave(); redraw();
+}
+// flip: the selected piece, or the brush. A piece with a turned twin (Kenney's and Bleed's sets of four, the chairs, the
+// long tables) swaps for it; any other is mirrored
+function flip() {
+  if (tool.kind === 'select' && sel) {
+    if (sel.layer !== 'obj') { toast('Only objects flip'); return; }
+    const i = sel.y * m.w + sel.x, id = m.obj[i], t = C.mirrorOf(id), a = C.sprite(m.biome, id), b = t ? C.sprite(m.biome, t) : C.mirrored(a);
+    // (its footprint turns too: it must still fit)
+    if (b && (b.fw !== a.fw || b.fh !== a.fh)) { const old = [m.obj[i], m.flip[i]]; C.flipAt(m, i); C.compute(m); const ok = fits(sel, [sel.x, sel.y]); m.obj[i] = old[0]; m.flip[i] = old[1]; C.compute(m); if (!ok) { toast('No room to turn it'); return; } }
+    push(); C.flipAt(m, i); C.compute(m); autosave(); redraw(); return;
+  }
+  if (tool.kind === 'obj') { const t = C.mirrorOf(tool.id); if (t) tool.id = t; else brushFlip ^= 1; markBrush(); redraw(); return; }
+}
+$('#flip').onclick = flip;
+function markBrush() { document.querySelectorAll('.pal button.on').forEach(b => b.classList.remove('on')); const b = document.querySelector(`.pal button[data-id="${tool.id}"]`); if (b && tool.kind === 'obj') b.classList.add('on'); $('#flip').classList.toggle('on', !!brushFlip && tool.kind === 'obj'); }
+function status(c) {
+  const names = indoor() ? ['outside', 'floor', 'boards', 'water'] : inside() ? ['rock', 'floor', 'boards', 'water'] : ['void', 'ground', 'stone path', 'water'];
+  let s = `${m.w}×${m.h} map · ${DATA.biomes[m.biome].name}`;
+  if (c && C.inb(m, c[0], c[1])) { const o = C.ownerOf(m, c[0], c[1]), sp = o && C.sprite(m.biome, m.obj[o[1] * m.w + o[0]]); s += ` · cell ${c[0]}, ${c[1]} · ${names[C.tAt(m, c[0], c[1])]}${sp && sp.name ? ' · ' + sp.name : o ? ' · object' : ''}`; }
+  $('#status').textContent = s;
+}
+let toastT = 0; function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2400); }
+
+// ───── the land (biome)
+// Outdoors, underground and indoors are different sorts of map, made differently: moving between lands of one sort
+// keeps everything (the map is only drawn with the other land's pieces); moving to another sort is a new map.
+const bsel = $('#biome'), KIND_NAME = { out: 'An outdoors map', under: 'An underground map', in: 'An indoors map' };
+// (a land may sit under another sort's tab: the castle keep is built like the underground, but it's a place indoors)
+const groupOf = b => DATA.biomes[b].group || C.kindOf(b);
+const landsOf = k => Object.keys(DATA.biomes).filter(b => groupOf(b) === k);
+function syncLand() {
+  const k = C.kindOf(m.biome), g = groupOf(m.biome);
+  document.querySelectorAll('#kinds button').forEach(b => { b.classList.toggle('on', b.dataset.kind === g); b.disabled = !landsOf(b.dataset.kind).length; if (b.disabled) b.title = 'Coming soon'; });
+  bsel.replaceChildren(...landsOf(g).map(b => new Option(DATA.biomes[b].name, b))); bsel.value = m.biome;
+  document.querySelectorAll('.k-out').forEach(e => e.hidden = k !== 'out');
+  $('#ghills').parentNode.hidden = !(k === 'out' || !!DATA.biomes[m.biome].natural);
+  document.querySelectorAll('.k-under').forEach(e => e.hidden = k !== 'under');
+  document.querySelectorAll('.k-in').forEach(e => e.hidden = k !== 'in');
+  $('#gdensl').textContent = k === 'out' ? 'Growth' : 'Clutter';
+}
+bsel.onchange = async () => {
+  await C.load('', [bsel.value]); push();
+  // a land made the other way (the keep's blocks, the houses' thin walls): a new map of it, generated
+  if (C.kindOf(bsel.value) !== C.kindOf(m.biome)) { theme = C.themesFor(bsel.value)[0][0]; m = C.generate(genOpts(bsel.value, theme)); syncLand(); buildPalette(); buildThemes(); fit(); autosave(); status(); return; }
+  C.rebiome(m, bsel.value); buildPalette(); buildThemes(); draw(); autosave(); status();
+};
+let askKind = null;
+document.querySelectorAll('#kinds button').forEach(b => b.onclick = () => {
+  const k = b.dataset.kind; if (k === groupOf(m.biome)) return;
+  askKind = k; $('#askText').textContent = `${KIND_NAME[k]} is made differently, so it's a new map. This one stays in Undo.`; $('#ask').hidden = false; $('#askGen').focus();
+});
+$('#askNo').onclick = () => { $('#ask').hidden = true; askKind = null; };
+async function newOfKind(k, gen) {
+  const land = landsOf(k)[0]; await C.load('', [land]); push();
+  const size = +$('#gsize').value;
+  if (gen) m = C.generate(genOpts(land, C.themesFor(land)[0][0]));
+  else if (k === 'out') m = C.compute(C.blank(size, size, land));
+  else { m = C.blank(size, size, land); m.terr.fill(VOID); const c = size >> 1, rw = Math.max(5, size >> 2), rh = Math.max(4, Math.round(size / 5)); for (let y = c - rh; y < c + rh; y++) for (let x = c - rw; x < c + rw; x++) m.terr[y * size + x] = GRASS; C.compute(m); }
+  theme = C.themesFor(land)[0][0]; syncLand(); buildPalette(); buildThemes(); fit(); autosave(); status();
+}
+$('#askGen').onclick = () => { $('#ask').hidden = true; newOfKind(askKind, true); };
+$('#askBlank').onclick = () => { $('#ask').hidden = true; newOfKind(askKind, false); };
+
+// ───── generate panel
+let theme = 'river';
+const THEME_ICON = { meadow: 252, river: 196, forest: 248, village: 1308, market: 1106, camp: 'tent1', graveyard: 142, ruins: 'tower', dungeon: 638, crypt: 1226, hall: 610, cellar: 1414, ruin: 573, cavern: 672, lair: 1754, tavern: 1414, house: 1400, manor: 1410, chapel: 740, barracks: 1206 };
+function buildThemes() {
+  const box = $('#themes'); box.replaceChildren();
+  const list = C.themesFor(m.biome); if (!list.some(t => t[0] === theme)) theme = list[0][0];
+  for (const [k, name] of list) {
+    let ic = THEME_ICON[k]; if (typeof ic === 'number') ic = C.forBiome(m.biome, ic);
+    if (typeof ic === 'string' && !C.prefabOK(m.biome, ic)) ic = 132;
+    if (typeof ic === 'number' && !C.has(m.biome, ic)) ic = [244, 132, 196, 128].find(i => C.has(m.biome, i));
+    const b = document.createElement('button'); b.className = 'sw' + (k === theme ? ' on' : '');
+    b.append(thumb((g, w, h) => fitSprites(g, w, h, typeof ic === 'string' ? (C.prefabOK(m.biome, ic) ? PREFABS[ic].cells.map(([dx, dy, t]) => [...cellXY(dx, dy), t]) : []) : [[0, 0, ic]]), 56, 34), Object.assign(document.createElement('span'), { textContent: name }));
+    b.onclick = () => { theme = k; box.querySelectorAll('.sw').forEach(x => x.classList.toggle('on', x === b)); }; box.append(b);
+  }
+}
+const WORDS = ['hollow', 'ford', 'thorn', 'mill', 'raven', 'ash', 'brook', 'hearth', 'stone', 'willow', 'moss', 'barrow', 'elder', 'fen', 'wold', 'grey', 'lantern', 'crow'];
+$('#dice').onclick = () => { $('#gseed').value = WORDS[Math.floor(Math.random() * WORDS.length)] + '-' + WORDS[Math.floor(Math.random() * WORDS.length)] + '-' + Math.floor(Math.random() * 100); };
+const genOpts = (biome, th) => ({ theme: th, biome, size: +$('#gsize').value, dens: +$('#gdens').value / 100, edges: $('#gcliff').value, water: $('#gwater').value, hills: $('#ghills').value, rooms: $('#grooms').value, wide: !!$('#gwide').value, doors: !!$('#gdoors').value, seed: $('#gseed').value.trim() || 'seed' });
+$('#gen').onclick = () => { push(); m = C.generate(genOpts(m.biome, theme)); fit(); autosave(); status(); toast('Generated: ' + C.themesFor(m.biome).find(x => x[0] === theme)[1]); };
+document.querySelectorAll('.tabs .btn').forEach(b => b.onclick = () => { document.querySelectorAll('.tabs .btn').forEach(x => x.classList.toggle('on', x === b)); $('#tab-paint').hidden = b.dataset.tab !== 'paint'; $('#tab-gen').hidden = b.dataset.tab !== 'gen'; });
+
+// ───── new / save / open / export
+$('#newmap').onclick = () => newOfKind(C.kindOf(m.biome), false);
+const packText = () => JSON.stringify(Object.assign({ format: 'map-forge' }, C.pack(m)));
+function unpackText(txt) { const p = JSON.parse(txt); if (p.format !== 'map-forge' && p.format !== 'grassland-map-forge') throw new Error('Not a map from here'); return C.unpack(p); }
+let saveT = 0; function autosave() { if (EMBED) return; clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem('mapforge-map', packText()); } catch (e) {} }, 400); }
+let downloads = null;
+$('#save').onclick = async () => {
+  if (!downloads) { try { await navigator.clipboard.writeText(packText()); toast('Map copied as text: paste it into a .json file'); } catch (e) { toast('Saving is not available here'); } return; }
+  try { await downloads.save({ filename: 'forge-map.json', data: packText() }); toast('Map saved'); } catch (e) { if (e && e.code !== 'declined') toast('Could not save: ' + (e.message || e.code)); }
+};
+$('#open').onclick = () => $('#file').click();
+$('#file').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const txt = await f.text(); push(); const nm = unpackText(txt); await C.load('', [nm.biome]); m = nm; syncLand(); buildPalette(); buildThemes(); fit(); autosave(); status(); toast('Opened ' + f.name); } catch (err) { toast('That file is not a map from here'); } e.target.value = ''; };
+function wholeCanvas() {
+  const b = C.bounds(m), c = document.createElement('canvas'); c.width = b.w; c.height = b.h; const g = c.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, b.w, b.h); C.paint(g, m, { ox: b.ox, oy: b.oy }); return c;
+}
+$('#png').onclick = async () => {
+  const c = wholeCanvas(), blob = await new Promise(r => c.toBlob(r, 'image/png'));
+  if (EMBED || !downloads) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'forge-map.png'; document.body.append(a); a.click(); a.remove(); return; }
+  try { await downloads.save({ filename: 'forge-map.png', data: blob }); toast('PNG saved'); } catch (e) { if (e && e.code !== 'declined') toast('Could not save: ' + (e.message || e.code)); }
+};
+// in the tabletop: it hands the map over to the scene, or closes
+if (NEWSCENE) { $('#use').textContent = 'Create scene'; $('#close').textContent = '← Back'; }
+$('#use').onclick = () => window.parent.postMessage({ type: 'iso-use', map: C.pack(m) }, location.origin);
+$('#close').onclick = () => window.parent.postMessage({ type: 'iso-close' }, location.origin);
+
+// ───── credits
+$('#credits').replaceChildren(...DATA.credits.map(([t, a, l, u]) => { const row = document.createElement('div'), s = document.createElement('a'); s.href = u; s.target = '_blank'; s.rel = 'noopener'; s.textContent = t; row.append(s, ` by ${a} · ${l}`); return row; }));
+
+// ───── start
+async function start(initial) {
+  await C.load('', Object.keys(DATA.biomes));
+  if (initial) m = initial;
+  else {
+    let loaded = false;
+    if (!EMBED) try { const s = localStorage.getItem('mapforge-map') || localStorage.getItem('gmf-map'); if (s) { m = unpackText(s); loaded = true; } } catch (e) {}
+    if (!loaded) m = C.generate({ theme: 'river', biome: 'grass', size: 36, dens: .55, edges: 'cliffs', water: 'auto', seed: 'hollow-ford' });
+  }
+  syncLand(); buildPalette(); buildThemes(); fit(); status(); btns();
+}
+if (EMBED) {
+  // the tabletop sends the scene's map (or nothing: a new one)
+  addEventListener('message', e => { if (e.origin !== location.origin || !e.data || e.data.type !== 'iso-load') return; let mm = null; try { if (e.data.map) mm = C.unpack(e.data.map); } catch (err) {} start(mm); });
+  window.parent.postMessage({ type: 'iso-ready' }, location.origin);
+} else start();
+if (window.claude && claude.use) claude.use('downloads').then(d => { downloads = d; if (!d) $('#save').textContent = 'Copy map'; }).catch(() => {});
+else $('#save').textContent = 'Copy map';
+btns();
+}
+</script></body></html>

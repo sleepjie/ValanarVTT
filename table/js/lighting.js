@@ -62,7 +62,7 @@ function cv() { const c = document.createElement('canvas'); c.width = c.height =
 const VIS = cv(), COL = cv(), GREY = cv(), EXP = cv();
 // scratch canvases (never shown): the lit areas, the lit areas of the lights that don't move (kept until something
 // changes them), the holes to cut in the darkness, and the colour of the lights that neither move nor flicker
-const LIT = cv(), STAT = cv(), HOLES = cv(), COLSTAT = cv();
+const LIT = cv(), STAT = cv(), HOLES = cv(), COLSTAT = cv(), FACE = cv();
 function scratch(o, cw, ch) { if (o.c.width !== cw || o.c.height !== ch) { o.c.width = cw; o.c.height = ch; o.key = null; } }
 let losVer = 0;   // goes up whenever walls change, so cached light shapes are made again
 function clearLos() { losCache.clear(); losVer++; }
@@ -156,6 +156,30 @@ function drawLit(ls, soft) {
   c.filter = 'none';
 }
 
+// An isometric map's walls stand up: sight and light stop at a wall's foot, but its face rises above that, over the
+// floor behind it on the screen. So a wall's face is seen (and lit) as far as the floor in front of it is: each
+// column of the face takes what's just below its foot. (Only the iso walls the server makes: src 'iso'.)
+function isoFaces(ctx, k) {
+  const s = state.scene; if (!s || !s.meta.iso || !V.isoWallHeight) return;
+  const ws = walls().filter(w => w.src === 'iso' && w.kind !== 'shade' && !((w.kind === 'door' || w.kind === 'secret') && w.open)); if (!ws.length) return;   // (a house's walls hide no ground)
+  const H = V.isoWallHeight() * k, cw = ctx.canvas.width, ch = ctx.canvas.height; if (!(H > 0)) return;
+  scratch(FACE, cw, ch); const f = FACE.ctx; f.setTransform(1, 0, 0, 1, 0, 0); f.globalCompositeOperation = 'copy'; f.drawImage(ctx.canvas, 0, 0); f.globalCompositeOperation = 'source-over';
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none';
+  const step = 3, below = Math.max(2, 5 * k);
+  for (const w of ws) {
+    const ax = w.a[0] * k, ay = w.a[1] * k, bx = w.b[0] * k, by = w.b[1] * k;
+    if (Math.abs(bx - ax) < 1) continue;   // (upright on the screen: no face to see)
+    const x0 = Math.min(ax, bx), x1 = Math.max(ax, bx), slope = (by - ay) / (bx - ax);
+    for (let x = Math.floor(x0); x < x1; x += step) {
+      const foot = ay + (x + step / 2 - ax) * slope, sy = Math.round(foot + below);
+      if (sy < 0 || sy >= ch || x < 0 || x >= cw) continue;
+      const wdt = Math.min(step, cw - x);
+      ctx.drawImage(FACE.c, x, sy, wdt, 1, x, foot - H, wdt, H + below);   // the floor just in front, drawn up the face
+    }
+  }
+  ctx.restore();
+}
+
 let expKey = null, expSaveT = 0;
 function render(now) {
   dirty = false;
@@ -196,7 +220,7 @@ function render(now) {
       if (remember && memory > 0.01 && (EXP.tex || EXP.c.width > 2)) { c.globalCompositeOperation = 'destination-out'; c.globalAlpha = memory; c.drawImage(EXP.c, 0, 0, VIS.c.width, VIS.c.height); c.globalAlpha = 1; }
       fit(EXP, w, h, Math.min(0.35, 600 / Math.max(w, h)));
       const e = EXP.ctx; e.globalCompositeOperation = 'source-over';
-      if (!v.day) drawLit(v.lights, soft);
+      if (!v.day) { drawLit(v.lights, soft); isoFaces(LIT.ctx, VIS.k); }
       // each viewer sees the lit areas (and their darkvision) within their line of sight
       for (const sv of v.viewers) {
         if (sv.poly.length < 6) continue;
@@ -217,6 +241,7 @@ function render(now) {
           ctx.restore();
         }
       }
+      isoFaces(hc, VIS.k); if (remember) isoFaces(e, EXP.k);
       if (remember) { EXP.dirty = true; saveExploredSoon(); }
       c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'destination-out'; c.drawImage(HOLES.c, 0, 0);
     } else if (d > 0) {
@@ -224,7 +249,7 @@ function render(now) {
       // a night-blue tint that deepens to pure black at full darkness
       c.fillStyle = `rgba(0,${Math.round(8 * (1 - d))},${Math.round(20 * (1 - d))},${V.isGM() && state.gmSeeDark ? d * 0.5 : d})`; c.fillRect(0, 0, VIS.c.width, VIS.c.height);
       if (litLights.length) {
-        drawLit(litLights, soft);
+        drawLit(litLights, soft); isoFaces(LIT.ctx, VIS.k);
         c.globalCompositeOperation = 'destination-out'; c.drawImage(LIT.c, 0, 0);
       }
     }

@@ -340,7 +340,9 @@ window.ValanarAmbience = function (ctx) {
     draw(t);
   }
   raf = requestAnimationFrame(loop);
-  map.on('move', () => { if (!zooming) draw(performance.now()); });
+  // (a pan carries the drawing along with the map, so it waits for the next frame of its own; a glide's zoom can't wait)
+  let movedZ = null;
+  map.on('move', () => { const z = map.getZoom(); if (!zooming && z !== movedZ) { movedZ = z; draw(performance.now()); } });
 
   // ───────── the seasons ─────────
   // A coarse picture of the land laid over the map: snow (white, on top) and the season's cast (multiplied).

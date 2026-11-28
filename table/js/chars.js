@@ -155,9 +155,10 @@ function renderChars() {
   if (!c) return;
   const gm = V.isGM();
   const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
-  const list = (c.characters || []).slice().sort(byName);
+  // (creatures dragged onto the map from the Bestiary: their sheets open from their tokens, not listed here)
+  const list = (c.characters || []).filter(ch => ch.folder !== 'onmap').slice().sort(byName);
   const hos = (c.handouts || []).slice().sort(byName);
-  const folders = c.charFolders || [];
+  const folders = (c.charFolders || []).filter(f => f.id !== 'onmap');
   const sheets = Object.entries(c.sheets || {});
   const defSheet = (sheets.find(([, v]) => v.mode === c.mode) || sheets[0] || ['dnd5e'])[0];
   const ownerNames = ch => ch.owners.map(V.member).filter(u => u && u.role !== 'gm').map(u => u.name).join(', ');
@@ -197,7 +198,7 @@ function renderChars() {
         e.preventDefault(); e.stopPropagation(); dragFolder = null;
         if (!canNest(fold, fid)) return;
         if (fid) { folderOpen[fid] = true; saveFolderOpen(); }
-        V.op({ t: 'folders.set', folders: folders.map(f => f.id === fold ? Object.assign({}, f, { parent: fid || null }) : f) });
+        V.op({ t: 'folders.set', folders: (c.charFolders || []).map(f => f.id === fold ? Object.assign({}, f, { parent: fid || null }) : f) });
         return;
       }
       const cid = e.dataTransfer.getData(DRAG_TYPE), hid = e.dataTransfer.getData(HO_TYPE); if (!cid && !hid) return;

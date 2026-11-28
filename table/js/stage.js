@@ -175,6 +175,12 @@ function renderBg() {
     if (V.drawGMOverlay) V.drawGMOverlay();
     return;
   }
+  if (m.iso && V.isoTexture) {   // a map from the map forge (table/js/iso.js): drawn here from its tiles
+    const tex = V.isoTexture(m.iso);
+    if (tex) { L.map.texture = tex; L.map.width = w; L.map.height = h; L.map.position.set(0, 0); } else L.map.texture = PIXI.Texture.EMPTY;
+    if (V.drawGMOverlay) V.drawGMOverlay();
+    return;
+  }
   if (V.drawGMOverlay) V.drawGMOverlay();
   if (m.image && m.image.url) {
     loadTex(m.image.url).then(tex => {
@@ -208,7 +214,9 @@ function loadTex(url) {
   const c = texCache.get(url);
   if (c && c.then) return c;
   if (c) return Promise.resolve(c);
-  const p = PIXI.Assets.load(url).then(t => { texCache.set(url, t); return t; }, e => { texCache.set(url, 'error'); throw e; });
+  // (as a picture whatever its name ends in: a link like "….tif?width=640" is served as a JPEG, but Pixi would find no
+  // loader for it and give back nothing, and the token would ask for it again and again, locking the table up)
+  const p = PIXI.Assets.load({ src: url, loadParser: 'loadTextures' }).then(t => { if (!t) { texCache.set(url, 'error'); throw new Error('Not a picture'); } texCache.set(url, t); return t; }, e => { texCache.set(url, 'error'); throw e; });
   texCache.set(url, p);
   return p;
 }
@@ -220,6 +228,16 @@ V.drawGrid = function (gfx, g, w, h, native) {
   if (g.type === 'square') {
     for (let x = g.ox - Math.floor(g.ox / g.size) * g.size; x <= w; x += g.size) gfx.moveTo(x, 0).lineTo(x, h);
     for (let y = g.oy - Math.floor(g.oy / g.size) * g.size; y <= h; y += g.size) gfx.moveTo(0, y).lineTo(w, y);
+    return;
+  }
+  if (g.type === 'iso') {   // diamonds: two sets of slanted lines, a cell's corners on each
+    const hw = g.size / 2, hh = g.size / 4, n = Math.ceil((w / hw + h / hh) / 2) + 2;
+    for (let k = -n; k <= n; k++) {
+      // lines of constant i - 0.5 (running down-left) and of constant j - 0.5 (running down-right)
+      const [ax, ay] = Geom.isoCentre(g, k - 0.5, -n), [bx, by] = Geom.isoCentre(g, k - 0.5, n);
+      const [cx, cy] = Geom.isoCentre(g, -n, k - 0.5), [dx, dy] = Geom.isoCentre(g, n, k - 0.5);
+      gfx.moveTo(ax, ay).lineTo(bx, by).moveTo(cx, cy).lineTo(dx, dy);
+    }
     return;
   }
   const S3 = Geom.S3;
@@ -836,13 +854,14 @@ function drawDraft() {
 
 function tplFromDrag(d) {
   d = d || drag;
-  const [ax, ay] = d.a, [bx, by] = d.b, g = V.grid();
-  const px = Math.hypot(bx - ax, by - ay);
+  const [ax, ay] = d.a, [bx, by] = d.b, g = V.grid(), iso = g.type === 'iso';
+  // isometric: measured on the ground (the picture with its height doubled, where a cell is size/√2 across)
+  const px = iso ? Math.hypot(bx - ax, (by - ay) * 2) * Math.SQRT2 : Math.hypot(bx - ax, by - ay);
   let len = px / gs() * (g.feet || 5);
   const step = g.feet || 5;
   len = Math.max(step, Math.round(len / step) * step);
   if (state.tplKind === 'circle') len = Math.max(step, len);
-  return { kind: state.tplKind, x: ax, y: ay, angle: Math.atan2(by - ay, bx - ax), len, width: g.feet || 5, color: state.me.color || '#c9a45c' };
+  return { kind: state.tplKind, x: ax, y: ay, angle: Math.atan2((by - ay) * (iso ? 2 : 1), bx - ax), len, width: g.feet || 5, color: state.me.color || '#c9a45c' };
 }
 
 function distText(pts) {

@@ -42,13 +42,19 @@ const FEATS = [
   ['sack', 'Sacks', 1, 1, 'Dressing'], ['blood', 'Bloodstain', 1, 1, 'Dressing'], ['banner', 'Banner', 1, 1, 'Dressing'], ['shelf', 'Shelf', 2, 1, 'Dressing'],
   ['lamp', 'Lantern', 1, 1, 'Dressing'],
   ['boulder', 'Boulder', 1, 1, 'Outdoors'], ['tree', 'Tree', 2, 2, 'Outdoors'], ['bush', 'Bush', 1, 1, 'Outdoors'], ['log', 'Fallen log', 2, 1, 'Outdoors'],
-  ['tent', 'Tent', 2, 2, 'Outdoors'], ['campfire', 'Campfire', 1, 1, 'Outdoors'], ['cart', 'Cart', 2, 3, 'Outdoors'], ['haybale', 'Hay bale', 1, 1, 'Outdoors']
+  ['tent', 'Tent', 2, 2, 'Outdoors'], ['campfire', 'Campfire', 1, 1, 'Outdoors'], ['cart', 'Cart', 2, 3, 'Outdoors'], ['haybale', 'Hay bale', 1, 1, 'Outdoors'],
+  ['pine', 'Pine', 2, 2, 'Outdoors'], ['stump', 'Stump', 1, 1, 'Outdoors'], ['reeds', 'Reeds', 1, 1, 'Outdoors'], ['flowers', 'Flowers', 1, 1, 'Outdoors'],
+  ['fence', 'Fence', 1, 1, 'Outdoors'], ['parapet', 'Low wall', 1, 1, 'Outdoors'], ['signpost', 'Signpost', 1, 1, 'Outdoors'], ['streetlamp', 'Street lamp', 1, 1, 'Outdoors'],
+  ['stall', 'Market stall', 2, 2, 'Outdoors'], ['woodpile', 'Woodpile', 2, 1, 'Outdoors'], ['grave', 'Grave', 1, 2, 'Outdoors'], ['roof', 'Roof (a building seen from above)', 3, 3, 'Outdoors']
 ];
+// the time of year a map is drawn in (painted): the ground, the trees and what's out in the open follow it.
+// 'clock': whatever the world's clock says now (the season from the date, snow when it's snowing)
+const SEASONS = ['spring', 'summer', 'autumn', 'winter', 'snow', 'clock'];
 const FEAT_KEYS = FEATS.map(f => f[0]);
 // what gives off light: [bright, dim (feet), colour, flicker, where the flame is in its square before it's turned (dx, dy)]
 const GLOW = {
   torch: [15, 30, '#ffb46a', 'torch', 0, -0.28], lamp: [15, 30, '#ffd59a', 'candle', 0, -0.3], brazier: [15, 30, '#ff9a4a', 'torch'],
-  campfire: [20, 40, '#ff9a4a', 'torch'], fireplace: [20, 40, '#ff9a4a', 'torch', 0, -0.22], candles: [5, 15, '#ffd08a', 'candle'], cauldron: [5, 10, '#ff8a3a', 'torch']
+  campfire: [20, 40, '#ff9a4a', 'torch'], streetlamp: [20, 40, '#ffd59a', 'candle', 0, 0], fireplace: [20, 40, '#ff9a4a', 'torch', 0, -0.22], candles: [5, 15, '#ffd08a', 'candle'], cauldron: [5, 10, '#ff8a3a', 'torch']
 };
 // the lights a plan gives (in squares): one for each torch, lantern, fire and candle, and a dull glow over lava.
 // The server keeps the scene's lights in step with them (src: 'plan'), as it does the walls.
@@ -134,7 +140,7 @@ function normalize(p) {
   const doors = (Array.isArray(p.doors) ? p.doors : []).slice(0, 3000).map(d => ({ x: clampN(d && d.x, 0, cols, 0), y: clampN(d && d.y, 0, rows, 0), s: d && d.s === 'w' ? 'w' : 'n', k: DOORS.includes(d && d.k) ? d.k : 'door' }))
     .filter(d => { const key = d.x + ',' + d.y + d.s; if (seen.has(key)) return false; seen.add(key); return inside(d.x, d.y) || (d.s === 'n' ? d.y === rows && d.x < cols : d.x === cols && d.y < rows); });
   const feats = (Array.isArray(p.feats) ? p.feats : []).slice(0, 3000).filter(f => f && FEAT_KEYS.includes(f.k)).map(f => ({ k: f.k, x: clampN(f.x, 0, cols - 1, 0), y: clampN(f.y, 0, rows - 1, 0),
-    w: clampN(f.w, 1, 12, 1), h: clampN(f.h, 1, 12, 1), r: clampN(f.r, 0, 3, 0) }));
+    w: clampN(f.w, 1, 60, 1), h: clampN(f.h, 1, 60, 1), r: clampN(f.r, 0, 3, 0) }));
   const labels = (Array.isArray(p.labels) ? p.labels : []).slice(0, 400).map(l => {
     const o = { n: String(l && l.n || '').slice(0, 6), x: Math.max(0, Math.min(cols, +l.x || 0)), y: Math.max(0, Math.min(rows, +l.y || 0)) };
     if (l && l.t) o.t = String(l.t).slice(0, 80);          // the room's name
@@ -147,6 +153,7 @@ function normalize(p) {
     hatch: s.hatch !== false, grid: s.grid !== false, shadow: s.shadow !== false,
     floorMat: FLOOR_MATS.includes(s.floorMat) ? s.floorMat : STYLE.floorMat, wallMat: WALL_MATS.includes(s.wallMat) ? s.wallMat : STYLE.wallMat,
     outside: OUTSIDE.includes(s.outside) ? s.outside : STYLE.outside, labels: s.labels === 'all' ? 'all' : s.labels === 'gm' ? 'gm' : null };
+  if (SEASONS.includes(s.season)) style.season = s.season;
   return { cols, rows, cells: encode(cells), doors, feats, labels, style, seed: String(p.seed || '').slice(0, 40) };
 }
 // a working copy: the cells as an array (edit it, then pack() it back)
@@ -390,7 +397,7 @@ const SIGNS = ['', '', '', ' A tripwire crosses the doorway.', ' The floor here 
 // room's doorways (and to its middle), and nothing goes in a doorway or outside the room: corridors stay empty.
 const FEAT_DEF = Object.fromEntries(FEATS.map(f => [f[0], f]));
 const HUNG = new Set(['torch', 'lamp', 'banner', 'cobweb']);            // on the wall: in nobody's way
-const DECAL = new Set(['bones', 'blood', 'rug', 'trapdoor']);          // on the floor: walked over
+const DECAL = new Set(['bones', 'blood', 'rug', 'trapdoor', 'flowers']);          // on the floor: walked over
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];                          // north, east, south, west (a piece turned r has its back to DIRS[r])
 function furnisher(w, R) {
   const cols = w.cols, rows = w.rows;
@@ -665,6 +672,7 @@ function dress(f, rm, themeKey) {
 function generate(opts) {
   opts = opts || {};
   if (opts.kind === 'building') return genBuilding(opts);
+  if (opts.kind === 'outdoor') return genOutdoor(opts);
   const seed = String(opts.seed || Math.random().toString(36).slice(2, 10));
   const R = rng(seed);
   const kind = ['rooms', 'caves', 'mixed'].includes(opts.kind) ? opts.kind : 'rooms';
@@ -961,6 +969,7 @@ function genBuilding(opts) {
   const [bw, bh] = { small: [12, 9], medium: [18, 12], large: [26, 16] }[opts.size] || [18, 12];
   const margin = 4, cols = bw + margin * 2, rows = bh + margin * 2;
   const w = { cols, rows, grid: new Uint8Array(cols * rows).fill(MAT.grass), doors: [], feats: [], labels: [], style: Object.assign({}, STYLE, { render: opts.style === 'ink' ? 'ink' : 'painted', floorMat: B.floor, wallMat: B.walls, outside: 'grass' }), seed };
+  if (SEASONS.includes(opts.season)) w.style.season = opts.season;
   const X0 = margin, Y0 = margin;
   for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) w.grid[(Y0 + y) * cols + X0 + x] = FLOOR;
   // a path to the door and some cobbles in the yard
@@ -1081,6 +1090,331 @@ function genBuilding(opts) {
   for (const r of out) r.label = B_NAMES[r.type];
   return { plan: pack(w), rooms: out, lights: lightsOf(w), containers, name, intro, theme: key, seed };
 }
+// ───────── outdoors: a road, a crossroads, a clearing, a camp, an alley, a market square, a bridge, a graveyard ─────────
+// The ground is floor (grass, forest floor, a dirt road, cobbles, water); buildings are solid blocks (their walls stop
+// sight) with a roof drawn over each; trees, bushes, stalls and the rest are furniture. The season is the plan's own
+// (style.season), so the same map can be redrawn for winter without being made again.
+// the season for a point in the year (0 = the year's first day … 1) and the weather (snow on the ground when it snows)
+// (mid: when midsummer falls, the same way, if the calendar says: the seasons are the quarters of the year round it)
+function seasonAt(frac, kind, mid) {
+  const f = ((+frac || 0) % 1 + 1) % 1, m = f * 12;
+  let s = m < 2 || m >= 11 ? 'winter' : m < 5 ? 'spring' : m < 8 ? 'summer' : 'autumn';
+  if (mid != null && isFinite(mid)) { const q = (((f - mid + 0.125) % 1) + 1) % 1; s = q < 0.25 ? 'summer' : q < 0.5 ? 'autumn' : q < 0.75 ? 'winter' : 'spring'; }
+  return kind === 'snow' || kind === 'blizzard' ? 'snow' : s;
+}
+const OUTDOORS = {
+  road: { name: ['the {N} Road', 'the Old {N} Road', 'the {N} Way'], intro: 'A road through open country, with woods closing in on either side.' },
+  crossroads: { name: ['{N} Cross', 'the {N} Crossroads', 'the Crossing at {N}'], intro: 'Two roads meet; a signpost leans at the corner, and someone has left offerings at the wayside shrine.' },
+  clearing: { name: ['the {N} Glade', 'a clearing in {N} Wood', 'the {N} Hollow'], intro: 'A clearing deep in the woods; the trees press in close, and the trail in is easy to lose.' },
+  camp: { name: ['a camp in {N} Wood', 'the {N} Camp', 'a camp by the {N} Stones'], intro: 'Tents round a fire in a clearing: someone means to stay a while.' },
+  alley: { name: ['{N} Lane', '{N} Alley', '{N} Row', 'the {N} Wynd'], intro: 'A narrow lane between leaning houses: dark doorways, stacked crates and a way that bends out of sight.' },
+  market: { name: ['the {N} Market', '{N} Square', 'the {N} Cross Market'], intro: 'A market square ringed with shops and houses, its stalls crowded round the fountain.' },
+  bridge: { name: ['{N} Bridge', 'the Bridge at {N}', '{N} Crossing'], intro: 'A road crosses the river by a bridge; the banks are thick with reeds.' },
+  graveyard: { name: ['{N} Churchyard', 'the {N} Graves', 'the Yard of {N}'], intro: 'A walled churchyard: rows of graves, old yews, and a chapel nobody has lit in a long while.' }
+};
+const O_NAMES = ['Mill', 'Tanner', 'Ashford', 'Crow', 'Hollin', 'Greywater', 'Kettle', 'Thorn', 'Wyck', 'Saltby', 'Hangman', 'Brindle', 'Oakhurst', 'Fennick', 'Coldwell', 'Weaver', 'Barrow', 'Rook', 'Elder', 'Gallows', 'Mallow', 'Fisher', 'Candle', 'Hob'];
+const O_SIGNS = {
+  road: [['The signpost', 'A weathered signpost; one arm has been snapped off and turned to point the wrong way.'], ['The fallen tree', 'A tree down across the verge: a good spot to wait unseen for someone coming along the road.'], ['The old cart', 'An abandoned cart, one wheel broken. Its load is gone; the tracks of its oxen lead into the trees.']],
+  crossroads: [['The wayside shrine', 'A small shrine to a god of travellers, hung with charms and coins. Leaving nothing is thought to be bad luck.'], ['The signpost', 'Four arms, four roads; the names are cut deep, and one has been scratched out.']],
+  clearing: [['The clearing', 'Sunlight (or moonlight) falls into the open ground; the grass is trampled in a ring at its middle.'], ['The trail', 'The way in: a deer track, easy to lose.'], ['The pool', 'A still, dark pool. Nothing seems to drink from it.']],
+  camp: [['The fire', 'A fire banked with turf, a pot hung over it; the camp\'s night watch sits here.'], ['The tents', 'Bedrolls, packs and a locked box under a cloak.'], ['The stores', 'Crates and sacks of food and loot; a cart they mean to fill.']],
+  alley: [['The lane', 'Cobbles slick with water; the houses lean so close their eaves nearly touch.'], ['A side passage', 'A narrow way between two houses, barely shoulder-wide.'], ['A doorway', 'A door with no handle on the outside. Someone is watching through the crack.']],
+  market: [['The fountain', 'The square\'s fountain: where news is traded, and pockets picked.'], ['The stalls', 'Bread, cloth, pots, charms, a fortune teller and a man selling something he says is a dragon\'s egg.'], ['The shops', 'Shopfronts round the square: a cooper, a chandler, a moneylender with bars on his windows.']],
+  bridge: [['The bridge', 'The only crossing for miles; a toll was once taken here.'], ['The river', 'Deep and fast in the middle, the water too cold to swim for long.'], ['The reeds', 'Thick reeds along the bank, where anything could hide.']],
+  graveyard: [['The gate', 'A lychgate in the low wall; the hinges scream.'], ['The chapel', 'A small chapel, its door chained from the outside.'], ['The new grave', 'One grave has been dug recently, and not by the sexton.']]
+};
+function genOutdoor(opts) {
+  const seed = String(opts.seed || Math.random().toString(36).slice(2, 10)), R = rng(seed);
+  const key = OUTDOORS[opts.theme] ? opts.theme : R.pick(Object.keys(OUTDOORS)), O = OUTDOORS[key];
+  const [cols, rows] = { small: [26, 18], medium: [36, 26], large: [48, 34] }[opts.size] || [36, 26];
+  const town = key === 'alley' || key === 'market';
+  const w = { cols, rows, grid: new Uint8Array(cols * rows).fill(town ? ROCK : key === 'clearing' || key === 'camp' ? MAT.earth : MAT.grass), doors: [], feats: [], labels: [],
+    style: Object.assign({}, STYLE, { render: opts.style === 'ink' ? 'ink' : 'painted', floorMat: 'cobble', wallMat: town ? R.pick(['plaster', 'brick', 'plaster', 'stone']) : 'stone',
+      outside: town ? 'dirt' : key === 'clearing' || key === 'camp' ? 'earth' : 'grass' }), seed };
+  if (SEASONS.includes(opts.season)) w.style.season = opts.season;
+  const inb = (x, y) => x >= 0 && y >= 0 && x < cols && y < rows, I = (x, y) => y * cols + x;
+  const get = (x, y) => inb(x, y) ? w.grid[I(x, y)] : -1, set = (x, y, v) => { if (inb(x, y)) w.grid[I(x, y)] = v; };
+  // value noise, for blobs and woods
+  const NG = 8, nv = new Float32Array((NG + 2) * (NG + 2)).map(() => R());
+  const noise = (x, y, sc) => { const fx = x / sc, fy = y / sc, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0, sm = t => t * t * (3 - 2 * t);
+    const v = (a, b) => nv[(((b % (NG + 2)) + NG + 2) % (NG + 2)) * (NG + 2) + (((a % (NG + 2)) + NG + 2) % (NG + 2))];
+    const a = v(x0, y0) + (v(x0 + 1, y0) - v(x0, y0)) * sm(tx), b = v(x0, y0 + 1) + (v(x0 + 1, y0 + 1) - v(x0, y0 + 1)) * sm(tx); return a + (b - a) * sm(ty); };
+  // a wandering line from one point to another (in squares), and the squares within a width of it
+  const wander = (ax, ay, bx, by, amp, n) => { const pts = [], L = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / L, ny = (bx - ax) / L, ph = R() * 9;
+    n = n || Math.max(6, Math.round(L / 2));
+    for (let i = 0; i <= n; i++) { const t = i / n, e = Math.sin(t * Math.PI), o = amp * e * (Math.sin(t * 5.1 + ph) * 0.6 + (noise(t * 30, ph * 3, 6) - 0.5) * 1.4); pts.push([ax + (bx - ax) * t + nx * o, ay + (by - ay) * t + ny * o]); }
+    return pts; };
+  const distTo = (pts, x, y) => { let d = 1e9; for (let i = 1; i < pts.length; i++) { const [ax, ay] = pts[i - 1], [bx, by] = pts[i], dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)), qx = ax + dx * t - x, qy = ay + dy * t - y; d = Math.min(d, qx * qx + qy * qy); } return Math.sqrt(d); };
+  const lineDist = pts => { const D = new Float32Array(cols * rows); for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) D[I(x, y)] = distTo(pts, x + 0.5, y + 0.5); return D; };
+  const carve = (D, width, v, keep) => { for (let i = 0; i < D.length; i++) if (D[i] < width / 2 && !(keep && keep(w.grid[i]))) w.grid[i] = v; };
+  // furniture: kept off each other (trees may crowd, their canopies overlap), and only where ok(material, x, y) says
+  const occ = new Uint8Array(cols * rows);
+  const put = (k, x, y, r, ok, sz) => {
+    const d = FEAT_DEF[k]; const fw0 = sz ? sz[0] : d[2], fh0 = sz ? sz[1] : d[3], fw = r % 2 ? fh0 : fw0, fh = r % 2 ? fw0 : fh0;
+    for (let yy = y; yy < y + fh; yy++) for (let xx = x; xx < x + fw; xx++) { if (!inb(xx, yy) || occ[I(xx, yy)]) return false; if (ok && !ok(w.grid[I(xx, yy)], xx, yy)) return false; }
+    for (let yy = y; yy < y + fh; yy++) for (let xx = x; xx < x + fw; xx++) occ[I(xx, yy)] = 1;
+    const f = { k, x, y, w: fw0, h: fh0, r: r || 0 }; w.feats.push(f); return f;
+  };
+  const natural_ = v => v === MAT.grass || v === MAT.earth || v === MAT.dirt && false;
+  const green = v => v === MAT.grass || v === MAT.earth;
+  const cells = test => { const out = []; for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (test(w.grid[I(x, y)], x, y)) out.push([x, y]); return out; };
+  const near = (x, y, v, r) => { for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (get(x + dx, y + dy) === v) return true; return false; };
+  const scatter = (k, n, ok, rot, sz) => { let m = n; for (const [x, y] of R.shuffle(cells(ok))) { if (m <= 0) break; if (put(k, x, y, rot == null ? R.int(0, 3) : rot, ok, typeof sz === 'function' ? sz() : sz)) m--; } return n - m; };
+  // woods: trees where the noise says thick, a little thinner by the open ground
+  const woods = (ok, thick, pine) => {
+    const list = R.shuffle(cells(ok));
+    for (const [x, y] of list) {
+      const p = thick(x, y); if (R() > p) continue;
+      const big = R.chance(0.35);
+      put(pine != null && R() < pine ? 'pine' : 'tree', x, y, R.int(0, 3), ok, big ? [3, 3] : [2, 2]);
+    }
+  };
+  const labels = [], label = (x, y, i) => { const s = O_SIGNS[key][i]; if (!s) return; labels.push({ n: String(labels.length + 1), x: Math.floor(x) + 0.5, y: Math.floor(y) + 0.5, t: s[0], note: s[1] }); };
+  const roads = [];   // the roads' squares, kept clear
+  const road = (ax, ay, bx, by, width, v, amp) => { const pts = wander(ax, ay, bx, by, amp == null ? 2.2 : amp); const D = lineDist(pts); carve(D, width, v, x => x === WATER); roads.push(D); return { pts, D }; };
+  const offRoad = (x, y, m) => roads.every(D => D[I(x, y)] > m);
+  const across = R.chance(0.5);   // which way the main road runs
+
+  // ── buildings (alley, market): the solid blocks left over, cut into rectangles, each with a roof and a door or two
+  const buildings = (doorChance) => {
+    const done = new Uint8Array(cols * rows), out = [];
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      if (done[I(x, y)] || w.grid[I(x, y)] !== ROCK) continue;
+      const mw = R.int(3, 7), mh = R.int(3, 6);
+      let bw = 0; while (bw < mw && x + bw < cols && w.grid[I(x + bw, y)] === ROCK && !done[I(x + bw, y)]) bw++;
+      let bh = 1; grow: while (bh < mh && y + bh < rows) { for (let k = 0; k < bw; k++) if (w.grid[I(x + k, y + bh)] !== ROCK || done[I(x + k, y + bh)]) break grow; bh++; }
+      for (let yy = y; yy < y + bh; yy++) for (let xx = x; xx < x + bw; xx++) done[I(xx, yy)] = 1;
+      out.push({ x, y, w: bw, h: bh });
+    }
+    for (const b of out) {
+      w.feats.push({ k: 'roof', x: b.x, y: b.y, w: b.w, h: b.h, r: 0 });
+      // doors onto the open ground (an edge with floor on the far side)
+      const edges = [];
+      for (let k = 0; k < b.w; k++) { if (inb(b.x + k, b.y - 1) && get(b.x + k, b.y - 1) !== ROCK) edges.push({ x: b.x + k, y: b.y, s: 'n' }); if (inb(b.x + k, b.y + b.h) && get(b.x + k, b.y + b.h) !== ROCK) edges.push({ x: b.x + k, y: b.y + b.h, s: 'n' }); }
+      for (let k = 0; k < b.h; k++) { if (inb(b.x - 1, b.y + k) && get(b.x - 1, b.y + k) !== ROCK) edges.push({ x: b.x, y: b.y + k, s: 'w' }); if (inb(b.x + b.w, b.y + k) && get(b.x + b.w, b.y + k) !== ROCK) edges.push({ x: b.x + b.w, y: b.y + k, s: 'w' }); }
+      if (edges.length && R.chance(doorChance)) { const e = R.pick(edges); w.doors.push(Object.assign(e, { k: R.chance(0.25) ? 'locked' : 'door' })); }
+      if (edges.length > 4 && R.chance(0.3)) { const e = R.pick(edges); if (!w.doors.some(d => d.x === e.x && d.y === e.y && d.s === e.s)) w.doors.push(Object.assign({}, e, { k: 'window' })); }
+    }
+    return out;
+  };
+  const byWall = (v, x, y) => v !== ROCK && v !== WATER && (get(x - 1, y) === ROCK || get(x + 1, y) === ROCK || get(x, y - 1) === ROCK || get(x, y + 1) === ROCK);
+  const wallSide = (x, y) => get(x, y - 1) === ROCK ? 0 : get(x + 1, y) === ROCK ? 1 : get(x, y + 1) === ROCK ? 2 : 3;   // (a piece turned r has its back to that side)
+  const dress = (list, ok) => { for (const [k, n] of list) { let m = n; for (const [x, y] of R.shuffle(cells(ok))) { if (m <= 0) break; if (put(k, x, y, k === 'lamp' ? wallSide(x, y) : R.int(0, 3), ok)) m--; } } };
+
+  if (key === 'road' || key === 'crossroads') {
+    const wd = R.int(3, 4);
+    // patches of forest floor under the thicker woods
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (noise(x, y, 7) > 0.62) set(x, y, MAT.earth);
+    const main = across ? road(-1, rows * (0.35 + R() * 0.3), cols + 1, rows * (0.35 + R() * 0.3), wd, MAT.dirt) : road(cols * (0.35 + R() * 0.3), -1, cols * (0.35 + R() * 0.3), rows + 1, wd, MAT.dirt);
+    let cross = null;
+    if (key === 'crossroads') cross = across ? road(cols * (0.4 + R() * 0.2), -1, cols * (0.4 + R() * 0.2), rows + 1, wd - 1, MAT.dirt, 1.5) : road(-1, rows * (0.4 + R() * 0.2), cols + 1, rows * (0.4 + R() * 0.2), wd - 1, MAT.dirt, 1.5);
+    // a stream across it now and then, with a little bridge
+    if (key === 'road' && R.chance(0.45)) {
+      const s = across ? wander(cols * (0.2 + R() * 0.6), -1, cols * (0.2 + R() * 0.6), rows + 1, 3) : wander(-1, rows * (0.2 + R() * 0.6), cols + 1, rows * (0.2 + R() * 0.6), 3);
+      const D = lineDist(s);
+      for (let i = 0; i < D.length; i++) if (D[i] < 1.1) w.grid[i] = main.D[i] < wd / 2 + 0.4 ? MAT.planks : WATER;
+      for (let i = 0; i < D.length; i++) if (w.grid[i] === MAT.planks) { const x = i % cols, y = (i / cols) | 0; if (main.D[i] > wd / 2 - 1) { const side = across ? (get(x, y - 1) !== MAT.planks ? 0 : 2) : (get(x - 1, y) !== MAT.planks ? 3 : 1); put('fence', x, y, side); } }
+      for (const [x, y] of cells((v, x, y) => green(v) && near(x, y, WATER, 1))) if (R.chance(0.35)) put('reeds', x, y, 0);
+    }
+    const thick = (x, y) => { const d = Math.min(...roads.map(D => D[I(x, y)])); return d < wd / 2 + 1.5 ? 0 : Math.min(0.5, 0.04 + Math.max(0, noise(x, y, 7) - 0.35) * 1.1) * Math.min(1, (d - wd / 2 - 1) / 3); };
+    if (key === 'crossroads') {
+      // the corner: a signpost, and a shrine (or a gibbet, or a well)
+      const cx = Math.round(across ? cross.pts[Math.floor(cross.pts.length / 2)][0] : main.pts[Math.floor(main.pts.length / 2)][0]), cy = Math.round(across ? main.pts[Math.floor(main.pts.length / 2)][1] : cross.pts[Math.floor(cross.pts.length / 2)][1]);
+      const spots = cells((v, x, y) => green(v) && offRoad(x, y, wd / 2 + 0.2)).sort((a, b) => Math.hypot(a[0] - cx, a[1] - cy) - Math.hypot(b[0] - cx, b[1] - cy));
+      if (spots[0]) { put('signpost', spots[0][0], spots[0][1], 0); label(spots[0][0], spots[0][1], 1); }
+      for (const [x, y] of spots.slice(1, 12)) if (put(R.chance(0.7) ? 'statue' : 'well', x, y, 0)) { label(x, y, 0); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1]]) if (R.chance(0.6)) put(R.chance(0.6) ? 'candles' : 'flowers', x + dx, y + dy, 0, v => green(v)); break; }
+    } else {
+      const side = cells((v, x, y) => green(v) && offRoad(x, y, wd / 2 + 0.2) && !offRoad(x, y, wd / 2 + 1.3));
+      for (const [x, y] of R.shuffle(side.slice())) if (put('signpost', x, y, 0)) { label(x, y, 0); break; }
+      for (const [x, y] of R.shuffle(side.slice())) if (put('log', x, y, R.int(0, 3), v => green(v))) { label(x, y, 1); break; }
+      if (R.chance(0.35)) for (const [x, y] of R.shuffle(cells((v, x, y) => (v === MAT.dirt || green(v)) && offRoad(x, y, 0.6) && !offRoad(x, y, wd / 2 + 2)))) if (put('cart', x, y, across ? 1 : 0, v => v === MAT.dirt || green(v))) { label(x, y, 2); break; }
+    }
+    woods(v => green(v), thick, 0.25);
+    scatter('bush', Math.round(cols * rows / 40), (v, x, y) => green(v) && offRoad(x, y, wd / 2 + 0.3));
+    scatter('boulder', R.int(1, 4), (v, x, y) => green(v) && offRoad(x, y, wd / 2 + 1));
+    scatter('stump', R.int(1, 3), (v, x, y) => green(v) && offRoad(x, y, wd / 2 + 1));
+    scatter('flowers', Math.round(cols * rows / 60), (v, x, y) => v === MAT.grass && offRoad(x, y, wd / 2 + 0.3));
+  } else if (key === 'clearing' || key === 'camp') {
+    const cx = cols / 2 + (R() - 0.5) * cols * 0.15, cy = rows / 2 + (R() - 0.5) * rows * 0.15, rx = cols * (key === 'camp' ? 0.3 : 0.26), ry = rows * (key === 'camp' ? 0.3 : 0.27);
+    const inside = (x, y) => Math.hypot((x + 0.5 - cx) / rx, (y + 0.5 - cy) / ry) + (noise(x, y, 3) - 0.5) * 0.5;
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (inside(x, y) < 1) set(x, y, MAT.grass);
+    // the trail in, from an edge
+    const e = R.int(0, 3), [ex, ey] = [[cx, -1], [cols + 1, cy], [cx + (R() - 0.5) * cols * 0.4, rows + 1], [-1, cy]][e];
+    const trail = road(ex, ey, cx, cy, 2, MAT.dirt, 2.5);
+    for (let i = 0; i < trail.D.length; i++) if (trail.D[i] < 1 && inside(i % cols, (i / cols) | 0) < 0.55) w.grid[i] = MAT.grass;   // (the trail fades into the grass)
+    const pond = key === 'clearing' && R.chance(0.45);
+    if (pond) {
+      const a = R() * Math.PI * 2, px = cx + Math.cos(a) * rx * 0.55, py = cy + Math.sin(a) * ry * 0.55, pr = 1.6 + R() * 1.4;
+      for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (Math.hypot(x + 0.5 - px, (y + 0.5 - py) * 1.2) + (noise(x * 2, y * 2, 3) - 0.5) * 1.2 < pr) set(x, y, WATER);
+      for (const [x, y] of cells((v, x, y) => green(v) && near(x, y, WATER, 1))) if (R.chance(0.45)) put('reeds', x, y, 0);
+      label(px, py, 2);
+    }
+    if (key === 'camp') {
+      const fx = Math.round(cx), fy = Math.round(cy);
+      put('campfire', fx, fy, 0); label(fx, fy, 0);
+      for (const [dx, dy, r] of [[-2, 0, 1], [2, 0, 1], [0, -2, 0], [0, 2, 0]]) if (R.chance(0.8)) put('log', dx < 0 ? fx - 3 : dx > 0 ? fx + 2 : fx - 1 + (r ? 0 : 0), dy < 0 ? fy - 2 : dy > 0 ? fy + 2 : fy, r ? 1 : 0, v => green(v) || v === MAT.dirt);
+      let nt = R.int(3, 5), first = null;
+      for (let k = 0; k < 40 && nt > 0; k++) { const a = R() * Math.PI * 2, d = 0.55 + R() * 0.3, x = Math.round(cx + Math.cos(a) * rx * d) - 1, y = Math.round(cy + Math.sin(a) * ry * d) - 1; const f = put('tent', x, y, R.int(0, 3), v => v === MAT.grass); if (f) { nt--; first = first || f; } }
+      if (first) label(first.x + 1, first.y + 1, 1);
+      const store = cells((v, x, y) => v === MAT.grass && inside(x, y) > 0.4 && inside(x, y) < 0.8);
+      let pile = null;
+      for (const [x, y] of R.shuffle(store.slice())) if ((pile = put('cart', x, y, R.int(0, 3), v => v === MAT.grass))) break;
+      if (pile) { label(pile.x + 1, pile.y + 1, 2); for (const k of ['crate', 'crate', 'barrel', 'sack', 'sack', 'woodpile']) for (let t = 0; t < 12; t++) if (put(k, pile.x + R.int(-2, 3), pile.y + R.int(-2, 4), R.int(0, 3), v => v === MAT.grass)) break; }
+      scatter('haybale', R.int(0, 2), (v, x, y) => v === MAT.grass && inside(x, y) > 0.5);
+    } else {
+      label(cx, cy, 0); label(ex < 0 ? 1 : ex > cols ? cols - 2 : ex, ey < 0 ? 1 : ey > rows ? rows - 2 : ey, 1);
+      if (R.chance(0.3)) { const n = R.int(6, 9), rr = Math.min(rx, ry) * 0.38; for (let k = 0; k < n; k++) { const a = k / n * Math.PI * 2; put('boulder', Math.round(cx + Math.cos(a) * rr) - 0, Math.round(cy + Math.sin(a) * rr), 0, v => v === MAT.grass); } }
+      else if (R.chance(0.4)) put('campfire', Math.round(cx), Math.round(cy), 0, v => v === MAT.grass);
+      scatter('log', R.int(1, 2), (v, x, y) => v === MAT.grass && inside(x, y) > 0.5);
+      scatter('flowers', R.int(3, 8), v => v === MAT.grass);
+    }
+    // the woods all round: thick, right up to the edge of the open ground
+    woods(v => v === MAT.earth, (x, y) => Math.min(0.95, 0.25 + (inside(x, y) - 1) * 1.2) * (trail.D[I(x, y)] < 1.6 ? 0 : 1), 0.3);
+    scatter('bush', Math.round(cols * rows / 30), (v, x, y) => (green(v)) && inside(x, y) > 0.8 && trail.D[I(x, y)] > 1.2);
+    scatter('stump', R.int(1, 4), (v, x, y) => green(v) && inside(x, y) > 0.7);
+    scatter('boulder', R.int(1, 3), (v, x, y) => v === MAT.earth);
+  } else if (key === 'bridge') {
+    const rw = R.int(5, 7), river = across ? wander(cols * (0.4 + R() * 0.2), -1, cols * (0.4 + R() * 0.2), rows + 1, 3) : wander(-1, rows * (0.4 + R() * 0.2), cols + 1, rows * (0.4 + R() * 0.2), 3);
+    const RD = lineDist(river);
+    for (let i = 0; i < RD.length; i++) { if (RD[i] < rw / 2) w.grid[i] = WATER; else if (RD[i] < rw / 2 + 1 + noise(i % cols, i / cols, 2) * 1.2) w.grid[i] = R.chance(0.5) ? MAT.gravel : MAT.dirt; }
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (w.grid[I(x, y)] === MAT.grass && noise(x, y, 6) > 0.66) set(x, y, MAT.earth);
+    const stone = R.chance(0.5), wd = stone ? 4 : 3;
+    const main = across ? road(-1, rows * (0.35 + R() * 0.3), cols + 1, rows * (0.35 + R() * 0.3), wd, MAT.dirt, 1.2) : road(cols * (0.35 + R() * 0.3), -1, cols * (0.35 + R() * 0.3), rows + 1, wd, MAT.dirt, 1.2);
+    // the deck: straight across, a square onto each bank
+    const deck = [];
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const i = I(x, y), onRiver = RD[i] < rw / 2 + 1.2;
+      const c0 = across ? Math.round(main.pts[Math.floor(main.pts.length / 2)][1] - wd / 2) : Math.round(main.pts[Math.floor(main.pts.length / 2)][0] - wd / 2);
+      const along = across ? y : x;
+      if (onRiver && along >= c0 && along < c0 + wd) { w.grid[i] = stone ? MAT.cobble : MAT.planks; deck.push([x, y, along === c0 ? 'lo' : along === c0 + wd - 1 ? 'hi' : '']); }
+      else if (onRiver && w.grid[i] === MAT.dirt && main.D[i] < wd / 2 + 1) w.grid[i] = across ? (RD[i] < rw / 2 ? WATER : MAT.gravel) : (RD[i] < rw / 2 ? WATER : MAT.gravel);
+    }
+    for (const [x, y, e] of deck) if (e) put(stone ? 'parapet' : 'fence', x, y, across ? (e === 'lo' ? 0 : 2) : (e === 'lo' ? 3 : 1));
+    if (deck.length) { const m = deck[Math.floor(deck.length / 2)]; label(m[0], m[1], 0); }
+    for (const [x, y] of cells((v, x, y) => (v === MAT.gravel || v === MAT.dirt || green(v)) && near(x, y, WATER, 1) && main.D[I(x, y)] > wd / 2 + 1)) if (R.chance(0.4)) put('reeds', x, y, 0);
+    const rs = cells(v => v === WATER); if (rs.length) { const p = R.pick(rs); label(p[0], p[1], 1); }
+    const rd = cells((v, x, y) => !!occ[I(x, y)] && w.feats.some(f => f.k === 'reeds' && f.x === x && f.y === y)); if (rd.length) { const p = R.pick(rd); label(p[0], p[1], 2); }
+    scatter('boulder', R.int(1, 3), (v, x, y) => v === WATER && RD[I(x, y)] > rw / 2 - 1.2 && main.D[I(x, y)] > wd);
+    woods(v => green(v), (x, y) => main.D[I(x, y)] < wd / 2 + 1.5 || RD[I(x, y)] < rw / 2 + 1.5 ? 0 : Math.min(0.45, 0.05 + Math.max(0, noise(x, y, 6) - 0.4)), 0.15);
+    scatter('bush', Math.round(cols * rows / 45), (v, x, y) => green(v) && main.D[I(x, y)] > wd / 2 + 0.3);
+    scatter('flowers', Math.round(cols * rows / 70), (v, x, y) => v === MAT.grass && main.D[I(x, y)] > wd / 2 + 0.3);
+    if (R.chance(0.4)) scatter('signpost', 1, (v, x, y) => green(v) && main.D[I(x, y)] > wd / 2 && main.D[I(x, y)] < wd / 2 + 1.2 && RD[I(x, y)] > rw / 2 + 2, 0);
+  } else if (key === 'graveyard') {
+    const m = 2, x0 = m, y0 = m, x1 = cols - m, y1 = rows - m;
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (noise(x, y, 5) > 0.68 && (x < x0 || y < y0 || x >= x1 || y >= y1)) set(x, y, MAT.earth);
+    // the wall round it, the gate on the south side
+    const gx = Math.round((x0 + x1) / 2) - 1;
+    for (let x = x0; x < x1; x++) { put('parapet', x, y0, 0); if (x < gx || x > gx + 1) put('parapet', x, y1 - 1, 2); }
+    for (let y = y0 + 1; y < y1 - 1; y++) { put('parapet', x0, y, 3); put('parapet', x1 - 1, y, 1); }
+    road(gx + 1, rows + 1, gx + 1, y0 + (y1 - y0) * 0.35, 2, MAT.gravel, 0.6);
+    label(gx + 1, y1 - 1, 0);
+    // the chapel, at the top of the path
+    const chw = R.int(5, 7), chh = R.int(6, 8), chx = Math.round(gx + 1 - chw / 2), chy = y0 + 1;
+    for (let y = chy; y < chy + chh - 2; y++) for (let x = chx; x < chx + chw; x++) { set(x, y, ROCK); occ[I(x, y)] = 1; }
+    w.feats.push({ k: 'roof', x: chx, y: chy, w: chw, h: chh - 2, r: 0 });
+    w.doors.push({ x: gx + 1, y: chy + chh - 2, s: 'n', k: 'locked' });
+    label(gx + 1, chy + chh - 1, 1);
+    // a mausoleum, sometimes
+    if (R.chance(0.5)) { const mx = R.chance(0.5) ? x0 + 2 : x1 - 6, my = y0 + 2; let ok = true; for (let y = my; y < my + 3; y++) for (let x = mx; x < mx + 4; x++) if (occ[I(x, y)]) ok = false;
+      if (ok) { for (let y = my; y < my + 3; y++) for (let x = mx; x < mx + 4; x++) { set(x, y, ROCK); occ[I(x, y)] = 1; } w.feats.push({ k: 'roof', x: mx, y: my, w: 4, h: 3, r: 0 }); w.doors.push({ x: mx + 1 + R.int(0, 1), y: my + 3, s: 'n', k: 'locked' }); } }
+    // graves in rows, gaps here and there; one fresh
+    const yard = (v, x, y) => (green(v)) && x > x0 && y > y0 && x < x1 - 1 && y < y1 - 1;
+    let fresh = null;
+    for (let y = y0 + 2; y < y1 - 3; y += 3) for (let x = x0 + 2; x < x1 - 2; x += R.chance(0.2) ? 3 : 2) {
+      if (R.chance(0.22)) continue;
+      const f = put('grave', x, y, 0, yard); if (f && !fresh && R.chance(0.08)) { fresh = f; set(x, y + 1, MAT.dirt); }
+    }
+    if (!fresh) { const gs = w.feats.filter(f => f.k === 'grave'); if (gs.length) { fresh = R.pick(gs); set(fresh.x, fresh.y + 1, MAT.dirt); } }
+    if (fresh) label(fresh.x, fresh.y, 2);
+    scatter('pine', R.int(2, 4), (v, x, y) => yard(v, x, y), 0, [2, 2]);
+    scatter('statue', R.int(1, 2), yard);
+    scatter('bench', R.int(0, 2), yard);
+    scatter('streetlamp', 1, (v, x, y) => yard(v, x, y) && Math.abs(x - gx - 1) < 3);
+    // outside the wall: the odd tree and bush
+    woods(v => green(v), (x, y) => x < x0 || y < y0 || x >= x1 || y >= y1 ? 0.25 : 0, 0.4);
+    scatter('bush', R.int(3, 8), (v, x, y) => green(v));
+    scatter('flowers', R.int(2, 6), yard);
+  } else if (key === 'alley') {
+    // the lane: straight runs with jogs, from one side to the other; a side passage or two; a courtyard sometimes
+    const lane = (sx, sy, len, wd, dirX) => {
+      let x = sx, y = sy, run = 0;
+      for (let k = 0; k < len; k++) {
+        for (let t = 0; t < wd; t++) dirX ? set(x, y + t, MAT.cobble) : set(x + t, y, MAT.cobble);
+        dirX ? x++ : y++; run++;
+        if (run > 4 && R.chance(0.18)) { const j = R.chance(0.5) ? 1 : -1; for (let t = 0; t < wd + 1; t++) dirX ? set(x, y + Math.min(t, wd) * 1 + (j < 0 ? -1 : 0), MAT.cobble) : set(x + Math.min(t, wd) + (j < 0 ? -1 : 0), y, MAT.cobble); dirX ? (y = Math.max(1, Math.min(rows - wd - 1, y + j))) : (x = Math.max(1, Math.min(cols - wd - 1, x + j))); run = 0; }
+      }
+    };
+    const wd = R.int(2, 3);
+    if (across) lane(0, Math.round(rows / 2 - wd / 2 + (R() - 0.5) * 4), cols, wd, true); else lane(Math.round(cols / 2 - wd / 2 + (R() - 0.5) * 4), 0, rows, wd, false);
+    const nside = R.int(1, 3);
+    for (let k = 0; k < nside; k++) {
+      const main = cells(v => v === MAT.cobble), [mx, my] = R.pick(main.filter(([x, y]) => across ? x > 3 && x < cols - 4 : y > 3 && y < rows - 4));
+      const up = R.chance(0.5);
+      if (across) { let y = my; while (y >= 0 && y < rows && get(mx, y) === MAT.cobble) y += up ? -1 : 1; const end = R.chance(0.6) ? (up ? -1 : rows) : y + (up ? -R.int(3, 6) : R.int(3, 6)); for (; up ? y > end : y < end; y += up ? -1 : 1) { set(mx, y, MAT.cobble); if (R.chance(0.3)) set(mx + 1, y, MAT.cobble); } }
+      else { let x = mx; while (x >= 0 && x < cols && get(x, my) === MAT.cobble) x += up ? -1 : 1; const end = R.chance(0.6) ? (up ? -1 : cols) : x + (up ? -R.int(3, 6) : R.int(3, 6)); for (; up ? x > end : x < end; x += up ? -1 : 1) { set(x, my, MAT.cobble); if (R.chance(0.3)) set(x, my + 1, MAT.cobble); } }
+    }
+    if (R.chance(0.5)) { const main = cells(v => v === MAT.cobble), [mx, my] = R.pick(main); const yw = R.int(3, 5), yh = R.int(3, 4), yx = Math.max(1, Math.min(cols - yw - 1, mx - 1)), yy = across ? (R.chance(0.5) ? my - yh : my + 1) : Math.max(1, Math.min(rows - yh - 1, my - 1)); const xx = across ? yx : (R.chance(0.5) ? mx - yw : mx + 1);
+      for (let y = yy; y < yy + yh; y++) for (let x = xx; x < xx + yw; x++) if (x > 0 && y > 0 && x < cols - 1 && y < rows - 1) set(x, y, R.chance(0.4) ? MAT.dirt : MAT.cobble); }
+    // the cobbles worn: moss, mud and puddles
+    for (const [x, y] of cells(v => v === MAT.cobble)) { const n = noise(x, y, 3); if (n > 0.72) set(x, y, MAT.mossy); else if (n < 0.2) set(x, y, MAT.dirt); }
+    for (const [x, y] of R.shuffle(cells(v => v === MAT.cobble || v === MAT.dirt)).slice(0, R.int(1, 3))) set(x, y, WATER);
+    const bl = buildings(0.55);
+    const ln = cells(v => v === MAT.cobble); if (ln.length) { const p = ln[Math.floor(ln.length / 2)]; label(p[0], p[1], 0); }
+    const dr = w.doors.filter(d => d.k !== 'window'); if (dr.length) { const d = R.pick(dr); label(d.s === 'w' ? d.x : d.x, d.s === 'n' ? d.y : d.y, 2); }
+    dress([['crate', R.int(2, 5)], ['barrel', R.int(2, 4)], ['sack', R.int(1, 3)], ['rubble', R.int(1, 3)], ['lamp', R.int(1, 3)], ['woodpile', R.int(0, 1)], ['bones', R.chance(0.2) ? 1 : 0], ['blood', R.chance(0.15) ? 1 : 0]], byWall);
+    if (bl.length) { const side = cells((v, x, y) => v === MAT.cobble && byWall(v, x, y)); if (side.length) { const p = R.pick(side); label(p[0], p[1], 1); } }
+  } else if (key === 'market') {
+    // the square in the middle, streets out to the edges
+    const sw = Math.round(cols * (0.5 + R() * 0.12)), sh = Math.round(rows * (0.5 + R() * 0.12)), sx = Math.round((cols - sw) / 2), sy = Math.round((rows - sh) / 2);
+    const paving = R.chance(0.5) ? MAT.cobble : MAT.flagstone;
+    for (let y = sy; y < sy + sh; y++) for (let x = sx; x < sx + sw; x++) set(x, y, paving);
+    for (const side of R.shuffle([0, 1, 2, 3]).slice(0, R.int(3, 4))) {
+      const wd = R.int(2, 3);
+      if (side % 2 === 0) { const x = sx + R.int(2, sw - wd - 2); for (let y = side === 0 ? 0 : sy + sh; side === 0 ? y < sy : y < rows; y++) for (let t = 0; t < wd; t++) set(x + t, y, MAT.cobble); }
+      else { const y = sy + R.int(2, sh - wd - 2); for (let x = side === 3 ? 0 : sx + sw; side === 3 ? x < sx : x < cols; x++) for (let t = 0; t < wd; t++) set(x, y + t, MAT.cobble); }
+    }
+    // a ragged edge to the square: a house juts out here and there
+    for (let k = 0; k < 6; k++) { const bx = R.chance(0.5) ? sx : sx + sw - 2, by = sy + R.int(0, sh - 3); if (R.chance(0.5)) for (let y = by; y < by + R.int(2, 3); y++) for (let x = bx; x < bx + 2; x++) if (x === sx || x === sx + sw - 1 || x === sx + 1 || x === sx + sw - 2) set(x === sx + 1 ? sx : x === sx + sw - 2 ? sx + sw - 1 : x, y, ROCK); }
+    const fx = Math.round(cols / 2) - 1, fy = Math.round(rows / 2) - 1;
+    const centre = R.chance(0.7) ? put('fountain', fx, fy, 0) : put('well', fx, fy, 0);
+    if (centre) { label(fx + 1, fy + 1, 0); for (const [dx, dy] of [[-1, -1], [2, -1], [-1, 2], [2, 2]]) occ[I(fx + dx, fy + dy)] = occ[I(fx + dx, fy + dy)] || 0; }
+    const sq = (v, x, y) => (v === paving || v === MAT.cobble) && x >= sx && y >= sy && x < sx + sw && y < sy + sh;
+    // stalls in rows across the square, each with its goods about it
+    const reserve = []; for (let y = fy - 1; y <= fy + 2; y++) for (let x = fx - 1; x <= fx + 2; x++) if (inb(x, y) && !occ[I(x, y)]) { occ[I(x, y)] = 1; reserve.push(I(x, y)); }
+    let ns = 0, firstStall = null;
+    for (let y = sy + 1; y < sy + sh - 2; y += R.int(4, 5)) for (let x = sx + 1; x < sx + sw - 2; x += R.int(3, 5)) {
+      if (R.chance(0.3)) continue;
+      const f = put('stall', x, y, R.chance(0.85) ? 0 : 2, sq); if (!f) continue; ns++; firstStall = firstStall || f;
+      for (const k of [R.pick(['crate', 'barrel', 'sack']), R.chance(0.5) ? R.pick(['crate', 'barrel', 'sack', 'chest']) : null]) if (k) for (let t = 0; t < 6; t++) if (put(k, x + R.int(-1, 2), y + R.int(1, 2), R.int(0, 3), sq)) break;
+    }
+    for (const i of reserve) occ[i] = 0;
+    if (firstStall) label(firstStall.x + 1, firstStall.y + 1, 1);
+    scatter('cart', R.int(1, 2), sq);
+    scatter('haybale', R.int(0, 3), sq);
+    scatter('bench', R.int(1, 3), (v, x, y) => sq(v, x, y) && byWall(v, x, y));
+    scatter('streetlamp', R.int(2, 4), (v, x, y) => sq(v, x, y) && (x === sx || y === sy || x === sx + sw - 1 || y === sy + sh - 1));
+    buildings(0.85);
+    dress([['barrel', R.int(1, 3)], ['crate', R.int(1, 3)], ['lamp', R.int(1, 3)]], (v, x, y) => byWall(v, x, y));
+    const dr = w.doors.filter(d => d.k === 'door'); if (dr.length) { const d = R.pick(dr); label(d.x, d.y, 2); }
+  }
+  // labels: on the open ground (nudged off the walls)
+  w.labels = labels.map(l => { l.x = Math.max(0.5, Math.min(cols - 0.5, l.x)); l.y = Math.max(0.5, Math.min(rows - 0.5, l.y)); return l; });
+  // crates, barrels and sacks that can be opened: a camp's spoils, a market's goods, what's left in an alley
+  const containers = [];
+  if (opts.containers !== false) {
+    const table = { camp: 'preset:bandit', market: 'preset:clutter', alley: 'preset:clutter' }[key];
+    if (table) for (let i = w.feats.length - 1; i >= 0; i--) {
+      const f = w.feats[i], C = CONTAINERS[f.k]; if (!C || !R.chance(0.6)) continue;
+      w.feats.splice(i, 1);
+      containers.push({ k: f.k, name: C[0], img: C[3], x: f.x + 0.5 + (R() - 0.5) * 0.16, y: f.y + 0.5 + (R() - 0.5) * 0.16, w: C[1], h: C[2], rot: f.k === 'chest' ? 0 : Math.round((R() - 0.5) * 40), table, locked: f.k === 'chest' && R.chance(0.4) });
+    }
+  }
+  const N = R.pick(O_NAMES), nm = R.pick(O.name).replace('{N}', N);
+  const name = nm[0].toUpperCase() + nm.slice(1);
+  const rooms = w.labels.map((l, i) => ({ n: i + 1, x: Math.floor(l.x), y: Math.floor(l.y), w: 1, h: 1, type: key, label: l.t, text: l.note }));
+  return { plan: pack(w), rooms, lights: lightsOf(w), containers, name, intro: O.intro, theme: key, seed, outdoor: true };
+}
 const TYPE_NAMES = { entrance: 'Entrance', exit: 'The way down', crypt: 'Crypt', ossuary: 'Ossuary', shrine: 'Shrine', embalming: 'Embalming room', guardroom: 'Guardroom', treasury: 'Treasury',
   collapsed: 'Collapsed chamber', flooded: 'Flooded chamber', antechamber: 'Antechamber', nave: 'Nave', cells: 'Cells', library: 'Library', refectory: 'Refectory', vestry: 'Vestry', well: 'Well room',
   scriptorium: 'Scriptorium', barracks: 'Barracks', armoury: 'Armoury', mess: 'Mess hall', storeroom: 'Storeroom', kitchen: 'Kitchen', throne: 'Throne room', forge: 'Forge', den: 'Den', larder: 'Larder',
@@ -1139,6 +1473,6 @@ function describe(before, after) {
   return s[0].toUpperCase() + s.slice(1);
 }
 
-const api = { merge, describe, loops, natural, NATURAL, ROCK, FLOOR, WATER, MATS, MAT, FLOOR_MATS, WALL_MATS, OUTSIDE, DOORS, FEATS, FEAT_KEYS, GLOW, CONTAINERS, ROOM_LOOT, lights: lightsOf, STYLE, THEMES: Object.keys(THEMES), BUILDINGS: Object.keys(BUILDINGS), encode, decode, normalize, unpack, pack, at, open, walls, regions, rng, generate, notes };
+const api = { merge, describe, loops, natural, NATURAL, ROCK, FLOOR, WATER, MATS, MAT, FLOOR_MATS, WALL_MATS, OUTSIDE, DOORS, FEATS, FEAT_KEYS, GLOW, CONTAINERS, ROOM_LOOT, lights: lightsOf, STYLE, THEMES: Object.keys(THEMES), BUILDINGS: Object.keys(BUILDINGS), OUTDOORS: Object.keys(OUTDOORS), SEASONS, seasonAt, encode, decode, normalize, unpack, pack, at, open, walls, regions, rng, generate, notes };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Plan = api;
 })(this);

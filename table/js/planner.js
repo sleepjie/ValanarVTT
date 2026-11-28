@@ -147,8 +147,9 @@ V.toolHandlers.plan = {
   subtools(box) {
     const b = (label, on_, fn, title) => h('button', { class: on_ ? 'on' : null, onclick: fn, title }, label);
     if (!scenePlan()) {
+      const iso = state.scene && state.scene.meta.iso;
       box.append(b('Start a plan here', false, startBlank, 'Draw this scene’s map yourself, square by square (any picture it has is put aside)'),
-        b('Generate a map…', false, () => openGenerator(), 'A dungeon, a cave or a building (a tavern, a house, a shop…), made for you, to tweak'));
+        b(iso ? 'Change the isometric map…' : 'Make a map…', false, () => openGenerator({ view: iso ? 'iso' : undefined }), iso ? 'This scene’s map, in the map forge' : 'A dungeon, a cave, a building or a place outdoors, generated (top-down, or isometric in the map forge)'));
       return;
     }
     ensureWork();
@@ -297,6 +298,8 @@ function planSettings() {
       h('div', { class: 'two' },
         pick('floorMat', Plan.FLOOR_MATS.map(m => [m, (Plan.MATS.find(q => q[0] === m) || [, m])[1]]), 'The plan’s floor'),
         pick('wallMat', [['stone', 'Stone walls'], ['rock', 'Rough rock'], ['brick', 'Brick'], ['wood', 'Timber'], ['plaster', 'Plaster']], 'Walls')),
+      h('div', { title: 'Painted maps: the grass, the trees and what’s out in the open follow the season (fallen leaves in autumn, bare trees and frost in winter, snow on everything when it snows). Following the clock, the map changes with the date and the weather.' },
+        pick('season', [['', 'Season: summer (as drawn)']].concat(seasonChoices().filter(([v]) => v !== 'summer').map(([v, l]) => [v, 'Season: ' + l.replace(/^F/, 'f')])), 'Time of year')),
       pick('outside', [['rock', 'Solid rock'], ['black', 'Black'], ['grass', 'Grass (a building outdoors)'], ['earth', 'Forest floor'], ['dirt', 'Dirt'], ['snow', 'Snow'], ['sand', 'Sand']], 'Outside the walls'),
       h('p', { class: 'muted small' }, 'Ink only:'),
       h('div', { class: 'planlook' }, col('paper', 'Paper'), col('floor', 'Floor'), col('ink', 'Ink'), col('water', 'Water')),
@@ -312,11 +315,36 @@ function planSettings() {
 }
 
 // ───────────────────────── the generator ─────────────────────────
-let genOpts = { kind: 'rooms', size: 'medium', theme: 'tomb', density: 0.5, loops: 0.3, water: 0.3, dark: true, seed: '', style: 'painted', containers: true, weather: false };
+let genOpts = { kind: 'rooms', size: 'medium', theme: 'tomb', density: 0.5, loops: 0.3, water: 0.3, dark: true, seed: '', style: 'painted', containers: true, weather: false, season: null };
+const OUT_NAMES = { road: 'A road through the country', crossroads: 'A crossroads', clearing: 'A clearing in the woods', camp: 'A camp in the woods', alley: 'An alley in town', market: 'A market square', bridge: 'A bridge over a river', graveyard: 'A churchyard' };
+const SEASON_NAMES = { spring: 'Spring', summer: 'Summer', autumn: 'Autumn', winter: 'Winter (bare trees, frost)', snow: 'Winter (snow)' };
+// the season choices: the clock's (and what it says now), or a fixed one
+function seasonChoices() {
+  const out = [];
+  if (state.calendar && state.calendar.cal) out.push(['clock', `Follow the clock (now ${(SEASON_NAMES[V.planSeason({ season: 'clock' })] || '').toLowerCase()})`]);
+  return out.concat(Object.entries(SEASON_NAMES));
+}
 // o.back: opened from the new scene wizard (a button goes back to it); o.name: the name typed there
+// o.view: 'top' (a plan, seen from above: this generator) or 'iso' (an isometric map: the map forge, iso.js), the window's two sides
+let genView = 'top';
 function openGenerator(o) {
   o = o || {};
-  const modal = $('#modal'), close = () => { modal.hidden = true; modal.replaceChildren(); };
+  if (o.view) genView = o.view;
+  const modal = $('#modal'), close = () => { if (V.closeForge) V.closeForge(true); modal.hidden = true; modal.replaceChildren(); };
+  if (V.closeForge) V.closeForge(true);
+  const views = h('div', { class: 'genviews', role: 'tablist' }, ...[['top', 'Top-down map', 'A plan seen from above: a dungeon, caves, a building or a place outdoors, generated with walls, doors, lights and loot'],
+    ['iso', 'Isometric map', 'The map forge: an isometric map, built by hand or generated (outdoors, underground or indoors); trees and walls stand up and creatures behind them show through']]
+    .map(([v, l, t]) => h('button', { class: 'btn sm' + (genView === v ? ' primary' : ''), role: 'tab', 'aria-selected': String(genView === v), title: t, onclick: () => { if (genView !== v) openGenerator(Object.assign({}, o, { view: v })); } }, l)));
+  if (genView === 'iso' && V.openForge) {
+    // the forge's own buttons make the scene (or put it on this one), and go back
+    const box = h('div', { class: 'genforge' });
+    modal.replaceChildren(h('div', { class: 'dialog gendlg', style: 'width:min(1500px,100%)' },
+      h('div', { class: 'dh' }, h('h2', null, o.back ? 'New scene: make a map' : 'Make a map'), views, h('button', { onclick: close }, '×')),
+      h('div', { class: 'db', style: 'padding:6px' }, box)));
+    modal.hidden = false;
+    V.openForge({ mount: box, fresh: !!o.back, name: o.name, back: o.back, done: () => { modal.hidden = true; modal.replaceChildren(); } });
+    return;
+  }
   let result = null;
   const pv = h('div', { class: 'genpv' }), info = h('div', { class: 'genfo small' });
   const seedIn = h('input', { value: genOpts.seed, placeholder: 'random', style: 'width:100%', onchange: e => { genOpts.seed = e.target.value.trim(); run(); } });
@@ -325,16 +353,17 @@ function openGenerator(o) {
   function run(newSeed) {
     if (newSeed || !seedIn.value) seedIn.value = Math.random().toString(36).slice(2, 8);   // (changing an option keeps the map's seed: ↻ for another)
     const seed = seedIn.value;
+    if (!genOpts.season) genOpts.season = state.calendar && state.calendar.cal ? 'clock' : 'summer';
     result = Plan.generate(Object.assign({}, genOpts, { seed }));
     const cv = V.planCanvas(result.plan, 900, { labels: true });
     pv.replaceChildren(cv || h('p', null, 'No preview'));
     const nl = Plan.lights(result.plan).length, nc = (result.containers || []).length;
-    info.replaceChildren(h('b', null, result.name), ` · ${result.rooms.length} rooms · ${result.plan.cols}×${result.plan.rows} squares · ${nl} light${nl === 1 ? '' : 's'}${nc ? ` · ${nc} container${nc === 1 ? '' : 's'}` : ''}`);
+    info.replaceChildren(h('b', null, result.name), ` · ${result.rooms.length} ${result.outdoor ? 'places of note' : 'rooms'} · ${result.plan.cols}×${result.plan.rows} squares · ${nl} light${nl === 1 ? '' : 's'}${nc ? ` · ${nc} container${nc === 1 ? '' : 's'}` : ''}`);
   }
   const make = async (into) => {
     if (!result) return;
     const g = V.grid(), size = into ? g.size : 100;
-    const building = genOpts.kind === 'building';
+    const building = genOpts.kind === 'building' || genOpts.kind === 'outdoor';
     const meta = { name: result.name, plan: result.plan, area: { cols: result.plan.cols, rows: result.plan.rows }, bg: result.plan.style.render === 'ink' ? result.plan.style.paper : '#0c0b0a', notes: Plan.notes(result),
       grid: { type: 'square', size, ox: 0, oy: 0, alpha: 0, feet: g.feet || 5, units: g.units || 'ft', diagonal: g.diagonal || 'one' }, vision: !!genOpts.dark, darkness: genOpts.dark ? 1 : 0, image: null,
       weather: building && !!genOpts.weather, clock: building && !!genOpts.weather };   // (outdoors: the weather, and the light of the hour)
@@ -354,25 +383,28 @@ function openGenerator(o) {
     if (!into && sid && V.viewScene) V.viewScene(sid);
     V.toast(`${result.name}: the room descriptions are in the scene’s notes${genOpts.containers && (result.containers || []).length ? '; the chests and barrels fill from their loot tables when first opened' : ''}`);
   };
-  const themes = (genOpts.kind === 'building' ? Plan.BUILDINGS : Plan.THEMES).map(t => [t, t[0].toUpperCase() + t.slice(1)]);
+  const outdoor = genOpts.kind === 'outdoor', above = outdoor || genOpts.kind === 'building';
+  const themes = outdoor ? Plan.OUTDOORS.map(t => [t, OUT_NAMES[t] || t]) : (genOpts.kind === 'building' ? Plan.BUILDINGS : Plan.THEMES).map(t => [t, t[0].toUpperCase() + t.slice(1)]);
   modal.replaceChildren(h('div', { class: 'dialog gendlg', style: 'width:min(980px,100%)' },
-    h('div', { class: 'dh' }, h('h2', null, (o.back ? 'New scene: ' : '') + (genOpts.kind === 'building' ? 'generate a building' : 'generate a dungeon').replace(/^g/, o.back ? 'g' : 'G')), h('button', { onclick: close }, '×')),
+    h('div', { class: 'dh' }, h('h2', null, (o.back ? 'New scene: ' : '') + (outdoor ? 'generate a place outdoors' : genOpts.kind === 'building' ? 'generate a building' : 'generate a dungeon').replace(/^g/, o.back ? 'g' : 'G')), views, h('button', { onclick: close }, '×')),
     h('div', { class: 'db genwrap' },
       h('div', { class: 'genctl' },
         h('div', null, h('label', null, 'Kind'), h('select', { style: 'width:100%', onchange: e => {
           genOpts.kind = e.target.value;
           if (genOpts.kind === 'building' && !Plan.BUILDINGS.includes(genOpts.theme)) { genOpts.theme = 'tavern'; genOpts.dark = false; }
-          if (genOpts.kind !== 'building' && !Plan.THEMES.includes(genOpts.theme)) { genOpts.theme = 'tomb'; genOpts.dark = true; }
+          if (genOpts.kind === 'outdoor' && !Plan.OUTDOORS.includes(genOpts.theme)) { genOpts.theme = 'road'; genOpts.dark = false; genOpts.weather = true; }
+          if (genOpts.kind !== 'building' && genOpts.kind !== 'outdoor' && !Plan.THEMES.includes(genOpts.theme)) { genOpts.theme = 'tomb'; genOpts.dark = true; }
           openGenerator(o);
-        } }, ...[['rooms', 'Dungeon: rooms and corridors'], ['caves', 'Caves'], ['mixed', 'Both: halls into caves'], ['building', 'A building: tavern, house, shop…']].map(([v, l]) => h('option', { value: v, selected: genOpts.kind === v || null }, l)))),
+        } }, ...[['rooms', 'Dungeon: rooms and corridors'], ['caves', 'Caves'], ['mixed', 'Both: halls into caves'], ['building', 'A building: tavern, house, shop…'], ['outdoor', 'Outdoors: a road, a clearing, an alley, a market…']].map(([v, l]) => h('option', { value: v, selected: genOpts.kind === v || null }, l)))),
         sel('size', [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']], 'Size'),
-        sel('theme', themes, genOpts.kind === 'building' ? 'What it is' : 'What it was'),
+        sel('theme', themes, above ? 'What it is' : 'What it was'),
+        above ? sel('season', seasonChoices(), 'Season') : null,
         sel('style', [['painted', 'Painted (textures, shadows)'], ['ink', 'Ink on parchment']], 'Look'),
-        genOpts.kind === 'building' ? null : [rng('density', 'Crowded', 'More rooms, packed tighter'), rng('loops', 'Loops', 'More than one way round'), rng('water', 'Water', 'Pools and flooding')],
-        h('label', { class: 'inline' }, h('input', { type: 'checkbox', checked: genOpts.dark, onchange: e => { genOpts.dark = e.target.checked; } }), genOpts.kind === 'building' ? 'Night: sight on, lit by its fires and lanterns' : 'Dark: sight on, lit by its torches and fires'),
+        above ? null : [rng('density', 'Crowded', 'More rooms, packed tighter'), rng('loops', 'Loops', 'More than one way round'), rng('water', 'Water', 'Pools and flooding')],
+        h('label', { class: 'inline' }, h('input', { type: 'checkbox', checked: genOpts.dark, onchange: e => { genOpts.dark = e.target.checked; } }), above ? 'Night: sight on, lit by its fires and lanterns' : 'Dark: sight on, lit by its torches and fires'),
         h('label', { class: 'inline', title: 'Chests, barrels, crates and sacks to suit each room (a storeroom’s crates, a bedroom’s chest, a treasury’s locked coffers), as objects on the token layer: move them, open them, take from them. Each fills from a loot table the first time it’s opened.' },
           h('input', { type: 'checkbox', checked: genOpts.containers, onchange: e => { genOpts.containers = e.target.checked; run(); } }), 'Containers with loot'),
-        genOpts.kind === 'building' ? h('label', { class: 'inline', title: 'From the clock in the top bar: rain, snow and fog outside (not indoors), the light and its colour following the time of day (gold at sunset, blue at night, grey under cloud), and dark at night but for its fires and lanterns' }, h('input', { type: 'checkbox', checked: genOpts.weather, onchange: e => { genOpts.weather = e.target.checked; } }), 'Weather and time of day') : null,
+        above ? h('label', { class: 'inline', title: 'From the clock in the top bar: rain, snow and fog outside (not indoors), the light and its colour following the time of day (gold at sunset, blue at night, grey under cloud), and dark at night but for its fires and lanterns' }, h('input', { type: 'checkbox', checked: genOpts.weather, onchange: e => { genOpts.weather = e.target.checked; } }), 'Weather and time of day') : null,
         h('label', null, 'Seed'), h('div', { class: 'row' }, seedIn, h('button', { class: 'btn sm', title: 'Another one', onclick: () => run(true) }, '↻')),
         info,
         h('p', { class: 'muted small' }, 'Walls, doors and secret doors come with it, and a description of each room goes in the scene’s notes. Tweak anything afterwards with the plan tool.')),
@@ -457,3 +489,5 @@ V.on('layer', () => { mSel = -1; mDraw(); });
 V.on('tool', () => { if (!V.mapEdit.on()) mSel = -1; if (mBar || V.mapEdit.on()) mDraw(); });
 on('tool', t => { if (t === 'plan') { ensureWork(); preview(); } else if (V.stage && V.stage.L) V.stage.L.draw.clear(); });
 })();
+
+document.head.append(V.h('style', null, `.gendlg .dh{gap:12px}.gendlg .genviews{display:flex;gap:4px;margin-right:auto}`));

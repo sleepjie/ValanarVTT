@@ -15,6 +15,8 @@
  *   POST   /api/compendium/import                 GM: any 5etools file (spells, items, a class, races, feats,
  *                                                 optional features) or { url }; says what it brought in
  *   DELETE /api/compendium/items?source=XGE · /api/compendium/features?source=TCE   GM: a book's worth
+ * Monsters (vtt-data/compendium/monsters.json): GET /api/compendium/monsters (GM) · PUT one, new or changed (homebrew) ·
+ *   DELETE ?source=… or ?id=…
  * The files themselves are the GM's own: none of it ships with the table. */
 'use strict';
 const fs = require('fs');
@@ -437,6 +439,17 @@ module.exports = function compendium(S) {
           Object.assign(mon, ownMonster(Object.assign({}, mon, { img: j.img, imgPage: j.imgPage, imgCredit: j.imgCredit, imgLicense: j.imgLicense })));
         }
         saveMonsters();
+        return sendJSON(res, 200, { monster: mon }), true;
+      }
+      // GM: one creature, new or changed (the Bestiary's New and Edit), in the table's own format; its picture is kept
+      if (p === '/api/compendium/monsters' && m === 'PUT') {
+        if (!gm) return deny(), true;
+        const x = Object.assign({}, (await bodyJSON(req)).monster || {});
+        if (!ID(x.id)) x.id = 'homebrew:' + (String(x.name || 'creature').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'creature') + '-' + crypto.randomBytes(3).toString('hex');
+        const old = monsters.find(y => y.id === x.id);
+        if (old && !('img' in x)) for (const k of ['img', 'imgPage', 'imgCredit', 'imgLicense']) if (old[k]) x[k] = old[k];
+        const mon = ownMonster(x); if (!mon) throw new Error('A creature needs a name');
+        mergeInto(monsters, [mon], saveMonsters);
         return sendJSON(res, 200, { monster: mon }), true;
       }
       // GM: one feature card, new or changed (the Edit Card button), in the table's own format

@@ -1,0 +1,57 @@
+Map Forge art (table/iso). All from OpenGameArt.org. Thank you to the artists.
+
+grassland.webp   "Grassland Tileset" by Clint Bellanger. CC-BY-SA 3.0
+                 https://opengameart.org/content/grassland-tileset
+snow.webp        "Isometric snow tileset (flare)" by rubberduck, based on Clint Bellanger's grassland tileset. CC-BY-SA 3.0
+                 https://opengameart.org/content/isometric-snow-tileset-flare
+desert.webp      "Desert Tileset" by Amstrad. CC-BY-SA 3.0
+                 https://opengameart.org/content/desert-tileset
+ruins.webp       "old ruins tileset" by rubberduck (walls, floors, pillars, statues, torches, archways). CC-BY-SA 3.0
+                   https://opengameart.org/content/old-ruins-tileset
+                 with the wooden floors and rugs of "Room Tileset" by m7600. CC-BY-SA 3.0
+                   https://opengameart.org/content/room-tileset
+ruins_ice.webp   the same, in rubberduck's frozen version.
+props.webp       packed from:
+                 "isometric medieval props" by rubberduck. CC0
+                   https://opengameart.org/content/isometric-medieval-props
+                 "isometric-parts-2" by rubberduck. CC-BY-SA 3.0
+                   https://opengameart.org/content/isometric-parts-2
+                 "isometric buildings" by rubberduck (from CC-BY and CC-BY-SA models on Blend Swap; see its CREDITS.txt). CC-BY-SA 3.0
+                   https://opengameart.org/content/isometric-buildings
+                 "Room Tileset" by m7600 (chairs, tables). CC-BY-SA 3.0
+                   https://opengameart.org/content/room-tileset
+                 "Dungeon Stairs" by Clint Bellanger (shown at half size). CC-BY 3.0
+                   https://opengameart.org/content/dungeon-stairs
+                 "Isometric mug and torch pack (flare)" by rubberduck (cups, jugs, torches, lamps, braziers). CC0
+                   https://opengameart.org/content/isometric-mug-and-torch-pack-flare
+                 the loose objects of "Isometric snow tileset (flare)" by rubberduck (fences, signs, handcarts, crates,
+                   firewood, watchtowers, graves, snowy cabins, tents, snowmen, stumps, rocks, winter grass). CC-BY-SA 3.0
+                   https://opengameart.org/content/isometric-snow-tileset-flare
+cave.webp        "Cave Tileset" by Clint Bellanger (as tileset_cave_1.png; its tiles placed by Flare's own tileset_cave.txt). CC-BY 3.0
+                   https://opengameart.org/content/cave-tileset
+props.webp, more: "Dark Ruins Tilesets - Isometric" by Cethiel (shrunk to the grid). CC0
+                   https://opengameart.org/content/dark-ruins-tilesets-isometric
+                 "Assorted Isometric Rocks" by Hansjörg Malthaner (Varkalandar), http://opengameart.org/users/varkalandar
+                   (shrunk and darkened to suit). CC-BY 4.0
+                   https://opengameart.org/content/assorted-isometric-rocks
+props.webp, more: Kenney's "Library Pack" (bookcases, display cases, trestle tables, chairs, book stands, candle stands;
+                   shrunk to the grid and darkened a little). CC0 · https://kenney.nl/assets/library-pack
+                 rubberduck's "Free isometric plants-pack" (pines, palms, cacti, bushes, broadleaf trees). CC0
+                   https://opengameart.org/content/free-isometric-plants-pack
+                 rubberduck's "isometric medieval buildings" (two timber houses, four turns, summer and winter). CC0
+                   https://opengameart.org/content/isometric-medieval-buildings
+                 "Household Collection" by Bleed: beds, tables, chairs,
+                   cupboards, bookshelf, fireplace and stool; the four views square to the grid, shrunk and darkened a
+                   little. CC-BY 3.0 · https://opengameart.org/content/household-collection-bleeds-game-art
+                 "Classic Dungeon Walls" by Clint 'pfunked' Bellanger: the castle keep's walls, gates and wall dressings
+                   (on the stone hall's floors). CC-BY 3.0 · https://opengameart.org/content/classic-dungeon-walls
+indoor_hall.webp "Isometric Tileset: Gothic Archways" by Lukas Küstenmacher (Coastmaker): thin walls, doors,
+                 archways, cut walls and stairwells, with the stone floors of rubberduck's ruins and m7600's rugs. CC-BY 4.0
+                   https://opengameart.org/content/isometric-tileset-gothic-archways
+indoor_house.webp the timber walls, windows and doors of "Room Tileset" by m7600, with the same floors. CC-BY-SA 3.0
+                   https://opengameart.org/content/room-tileset
+
+The sheets were re-encoded as WebP and the props cropped and packed into one sheet; the dungeon sheets join
+rubberduck's wall and floor sheets with m7600's floors. Apart from what is noted above, the art is unchanged.
+Under CC-BY-SA, these sheets (and changes to them) stay CC-BY-SA.
+The tile layout rules (banks, cliffs, cave walls) were learned from Flare's own maps (flare-game, CC-BY-SA 3.0).

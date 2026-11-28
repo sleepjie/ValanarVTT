@@ -85,11 +85,12 @@ V.openWizard = function (sceneId) {
     h('b', null, 'Drop a battle map here'), h('span', null, 'PNG, JPG or WebP'),
     h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => fileIn.click() }, 'Choose an image'),
       h('button', { class: 'btn', onclick: () => { W.blank = true; W.image = null; if (W.grid.color === '#000000') { W.grid.color = '#d8cfba'; W.grid.alpha = 0.2; } dropZone.hidden = true; fitView(); draw(); renderSide(); } }, 'Blank scene, no image')),
-    // or make one: the map generator (planner.js), with walls, doors, lights and loot
+    // or make one: the map-making window (planner.js): a top-down plan generated with walls, doors, lights and loot,
+    // or an isometric map in the map forge (iso.js)
     !sceneId && V.openDungeonGenerator ? h('div', { class: 'wizgen' },
       h('span', { class: 'or' }, 'or'),
-      h('button', { class: 'btn primary', onclick: () => { close(); V.openDungeonGenerator({ back: () => V.openWizard() }); } }, '⚄ Generate a map'),
-      h('span', { class: 'muted small' }, 'A dungeon, caves or a building (tavern, manor, shop…): walls, doors, lights and loot included')) : null);
+      h('button', { class: 'btn primary', onclick: () => { const nm = W.name; close(); V.openDungeonGenerator({ back: () => V.openWizard(), name: nm }); } }, '⚄ Make a map'),
+      h('span', { class: 'muted small' }, 'Generated or built: a top-down dungeon, caves, a building or a place outdoors (walls, doors, lights and loot included), or an isometric map in the map forge')) : null);
   const fileIn = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp', hidden: true, onchange: () => fileIn.files[0] && takeFile(fileIn.files[0]) });
   const hint = h('div', { class: 'pvhint' });
   const pv = h('div', { class: 'pvw' }, canvas, dropZone, hint, fileIn);

@@ -134,7 +134,9 @@ function indoorMask() {
   maskDirty = false; mask = null;
   const s = state.scene; if (!s || !V.sceneSize) return null;
   const { w, h: H } = V.sceneSize(), g = V.grid() || {}, plan = s.meta.plan;
-  const walls = [...s.walls.values()].filter(x => x.kind !== 'shade');
+  // (a forge map out of doors: its walls are cliffs and houses, which close nothing in: the weather falls everywhere)
+  const isoOut = !!(s.meta.iso && window.IsoCore && IsoCore.kindOf(s.meta.iso.biome) === 'out');
+  const walls = [...s.walls.values()].filter(x => x.kind !== 'shade' && !(isoOut && x.src === 'iso'));
   if (!walls.length && !plan) return null;
   const cs = Math.max(2, g.size > 0 ? g.size / 4 : 0, Math.sqrt(w * H / 300000));   // a quarter square (coarser on a huge map)
   const ox = -cs, oy = -cs, nx = Math.ceil(w / cs) + 2, ny = Math.ceil(H / cs) + 2;   // a ring of open ground round it

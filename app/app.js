@@ -410,6 +410,11 @@ function setIconScale(z) {
 }
 map.on('zoomanim', e => setIconScale(e.zoom));
 map.on('zoomend', () => { setIconScale(map.getZoom()); applyVisibility(); drawReadout(); });
+// a smooth zoom heading a good way off: icons take their new size (and places hide or show) as it sets off, rather than
+// all at the end; a small step waits for the end (resizing every icon is a frame's worth of work)
+let iconZ = null;
+map.on('zoomend', () => { iconZ = map.getZoom(); });
+map.on('glidetarget', e => { if (iconZ == null) iconZ = map.getZoom(); if (Math.abs(e.zoom - iconZ) >= 0.6) { iconZ = e.zoom; setIconScale(e.zoom); applyVisibility(e.zoom); } });
 // while a place is being dragged, the closed hand (see style.css)
 L.Marker.addInitHook(function () { this.on('dragstart', () => document.body.classList.add('drag-place')); this.on('dragend', () => document.body.classList.remove('drag-place')); });
 // image overlays (the nations' colour fill) are moved and scaled while the map glides, not resized every frame
@@ -503,6 +508,19 @@ function textLabel(m) {
 // gave it (the same arc textLabel draws), turned by its rotation, at the size it shows at now, in the same lettering.
 function textToNames(list) {
   const z = map.getZoom(), out = [];
+  const kindFor = m => (m.type === 'country' ? 'country' : 'other');
+  // a kind's defaults start as the commonest lettering among what's converted (unless the map has set them already)
+  const mode = arr => { const c = new Map(); for (const v of arr) c.set(v, (c.get(v) || 0) + 1); let b, n = -1; for (const [v, k] of c) if (k > n) { n = k; b = v; } return b; };
+  const haloOf = m => { const v = sv(m, 'halo'); return v === 'dark' ? 'dark' : v === 'none' ? false : true; };
+  const seeds = {};
+  for (const k of new Set(list.map(kindFor))) {
+    const ms = list.filter(m => kindFor(m) === k), sd = {};
+    const ink = mode(ms.map(m => sv(m, 'ink') || '')); if (ink) sd.color = ink;
+    sd.halo = mode(ms.map(haloOf)); sd.caps = mode(ms.map(m => !!sv(m, 'caps')));
+    const sp = mode(ms.map(m => letteringCss(m, true).sp)); if (sp != null) sd.spacing = +(+sp).toFixed(3);
+    sd.italic = mode(ms.map(m => sv(m, 'ital') !== false));
+    seeds[k] = sd;
+  }
   for (const m of list) {
     const name = String(m.name || '').trim(); if (!name) continue;
     const { sp } = letteringCss(m, true), ital = sv(m, 'ital'), caps = sv(m, 'caps'), ink = sv(m, 'ink');
@@ -518,14 +536,28 @@ function textToNames(list) {
     }
     const r = (+m.rot || 0) * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
     const pts = ems.map(([x, y]) => [Math.round(m.x + (x * c - y * s) * size), Math.round(m.y + (x * s + y * c) * size)]);
-    const lb = { id: uid('w'), text: name, kind: 'other', pts, size: Math.round(size), opacity: 0.95, spacing: +sp.toFixed(3), italic: ital !== false, caps: !!caps };
-    if (ink) lb.color = ink;
-    const t = typeOf(m); if (t.minZoom != null) lb.minZoom = t.minZoom; if (t.maxZoom != null) lb.maxZoom = t.maxZoom;
+    const kind = kindFor(m), lb = { id: uid('w'), text: name, kind, pts, size: Math.round(size) };
+    // its own lettering only where it differs from its kind's (so the kind's defaults, in Names, change them all)
+    const own = { color: ink || '', halo: haloOf(m), caps: !!caps, spacing: +sp.toFixed(3), italic: ital !== false };
+    for (const [k, v] of Object.entries(own)) if (v !== seeds[kind][k] && !(k === 'color' && !v)) lb[k] = v;
+    const t = typeOf(m); if (kind !== 'country') { if (t.minZoom != null) lb.minZoom = t.minZoom; if (t.maxZoom != null) lb.maxZoom = t.maxZoom; }
     out.push({ m, lb });
   }
   if (!out.length) return;
   const ids = new Set(out.map(o => o.m.id));
-  change(() => { (data.labels = data.labels || []).push(...out.map(o => o.lb)); data.markers = data.markers.filter(x => !ids.has(x.id)); });
+  change(() => {
+    (data.labels = data.labels || []).push(...out.map(o => o.lb)); data.markers = data.markers.filter(x => !ids.has(x.id));
+    // the kinds' defaults, where the map hasn't set them: from the converted names (countries also show until their type stopped showing)
+    const nk = (data.settings.nameKinds = data.settings.nameKinds || {});
+    for (const [k, sd] of Object.entries(seeds)) {
+      const o = (nk[k] = nk[k] || {});
+      for (const [key, v] of Object.entries(sd)) if (o[key] === undefined && v !== undefined && v !== '') o[key] = v;
+      if (k === 'country' && !o.zoom) { const t = (data.types || []).find(x => x.id === 'country'); if (t && t.maxZoom != null) o.zoom = [-9, +t.maxZoom]; }
+      if (k === 'country' && o.size === undefined) { const ss = out.filter(x => x.lb.kind === k).map(x => x.lb.size).sort((a, b) => a - b); if (ss.length) o.size = ss[ss.length >> 1]; }
+    }
+    // sizes equal to the kind's are left to it
+    for (const { lb } of out) if (nk[lb.kind] && nk[lb.kind].size === lb.size) delete lb.size;
+  });
   if (MT && MT.selectName) MT.selectName(out[out.length - 1].lb.id);
   toast(out.length === 1 ? `“${out[0].lb.text}” is now a map name: drag its points to bend it.` : `${out.length} names are now map names. Ctrl+Z puts them back.`);
 }
@@ -587,6 +619,7 @@ const divIcon = m => L.divIcon({ className: 'mk-wrap', html: iconHTML(m), iconSi
 function syncMarkers() {
   const ids = new Set(data.markers.map(m => m.id));
   for (const [id, rec] of live) if (!ids.has(id)) { layer.removeLayer(rec.marker); live.delete(id); }
+  const onCanvas = m => !typeOf(m).text && hasIcon(m);
   for (const m of data.markers) {
     const sig = sigOf(m);
     const rec = live.get(m.id);
@@ -601,8 +634,9 @@ function syncMarkers() {
         else select(id);
       });
       marker.on('dblclick', () => { if (rulerOn) rulerFinish(); });
-      marker.on('dragstart', () => { dragBefore = JSON.stringify(data); });
+      marker.on('dragstart', () => { dragBefore = JSON.stringify(data); const r = live.get(id); if (r) r.dragging = true; });
       marker.on('dragend', () => {
+        const r = live.get(id); if (r) { r.dragging = false; setTimeout(() => ICV.release(r), 200); }
         const mm = findMarker(id); if (!mm) return;
         const p = toPixel(marker.getLatLng());
         mm.x = Math.round(clamp(p.x, 0, INFO.width - 1));
@@ -610,37 +644,271 @@ function syncMarkers() {
         commit(dragBefore);
         select(id);
       });
-      layer.addLayer(marker);
-      live.set(m.id, { marker, sig });
-    } else if (rec.sig !== sig) {
-      rec.marker.setLatLng(toLatLng(m.x, m.y));
-      rec.marker.setIcon(divIcon(m));
-      rec.sig = sig;
+      const r = { marker, sig, m, cv: onCanvas(m), css: letteringCss(m, false).css };
+      if (!r.cv) layer.addLayer(marker);
+      live.set(m.id, r);
+    } else {
+      rec.m = m;
+      if (rec.sig !== sig) {
+        rec.marker.setLatLng(toLatLng(m.x, m.y));
+        rec.marker.setIcon(divIcon(m));
+        rec.sig = sig; rec.css = letteringCss(m, false).css;
+      }
+      const cv = onCanvas(m);
+      if (cv !== rec.cv) { rec.cv = cv; rec.proxy = false; if (cv) layer.removeLayer(rec.marker); else layer.addLayer(rec.marker); }
     }
   }
   for (const { marker } of live.values()) {
-    if (marker.dragging) editMode ? marker.dragging.enable() : marker.dragging.disable();
+    if (marker.dragging && marker._map) editMode ? marker.dragging.enable() : marker.dragging.disable();
   }
   applyVisibility();
+  ICV.sync();
   drawReadout();
 }
 
+// ── Places with an icon are drawn on one canvas, not as hundreds of page elements: moving and resizing a few hundred
+// pictures, each with its glow and its haloed name, was most of what made zooming and panning heavy. Each icon (at a
+// few sizes) and each name is drawn once into a little picture of its own and stamped from then on. The place under
+// the mouse, the chosen ones and one being dragged get their real marker back for the while (rec.proxy), so hovering,
+// clicking, dragging and the glow work exactly as before; the canvas leaves them out.
+const ICV = (() => {
+  const pane = map.getPane('markerPane');
+  const cv = L.DomUtil.create('canvas', 'iconcv leaflet-zoom-animated', pane);
+  const g = cv.getContext('2d');
+  let drawnZ = null, drawnTL = null, drawnSize = null, drawnCenter = null, queued = false;
+  let order = [];            // canvas places, back to front (by y, as Leaflet stacks them)
+  let hits = [];             // [rec, x0, y0, x1, y1] in layer pixels, as last drawn (front last)
+  const PAD = 0.15;
+  const imgs = new Map();    // src -> Image
+  const isprites = new Map(), lsprites = new Map();
+  let look = null;           // the icons' and names' look, read off a hidden sample so the page's CSS still decides it
+  const probe = h('div', { class: 'mk-wrap icvprobe', 'aria-hidden': 'true' }, h('div', { class: 'mk', style: '--s:100' }, h('img', { alt: '' }), h('span', { class: 'lbl' }, 'Ag')));
+  map.getContainer().append(probe);
+  const lblProbes = new Map();
+  let epoch = 0;             // bumped whenever the drawn pictures are thrown away (each place keeps its last ones)
+  const kNow = () => Math.pow(2, (map.getZoom() - NATIVE) * ICON_GROWTH);
+  const dpr = () => Math.min(2, window.devicePixelRatio || 1);
+
+  function readLook() {
+    const cs = getComputedStyle(probe), ics = getComputedStyle(probe.querySelector('img'));
+    const root = getComputedStyle(map.getContainer());
+    lblProbes.delete('');
+    const key = [ics.filter, cs.opacity, root.getPropertyValue('--icon-scale'), labelLook('').key].join('#');
+    if (look && look.key === key) return false;
+    look = { key, filter: ics.filter === 'none' ? '' : ics.filter, alpha: +cs.opacity || 1, iconScale: +root.getPropertyValue('--icon-scale') || 1 };
+    isprites.clear(); lsprites.clear(); lblProbes.clear(); epoch++;
+    for (const sp of probe.querySelectorAll('.lbl.x')) sp.remove();
+    return true;
+  }
+  // a name's lettering (its own styles over the usual), as the page would draw it
+  function labelLook(css) {
+    let L0 = lblProbes.get(css); if (L0) return L0;
+    let el = probe.querySelector('.lbl');
+    if (css) { el = h('span', { class: 'lbl x', style: css }, 'Ag'); probe.firstChild.append(el); }
+    const s = getComputedStyle(el);
+    const shadows = s.textShadow === 'none' ? [] : s.textShadow.split(/,(?![^(]*\))/).map(p => {
+      const col = (p.match(/rgba?\([^)]*\)|#[0-9a-f]+|[a-z]+/i) || ['transparent'])[0];
+      const n = (p.replace(col, '').match(/-?[\d.]+px/g) || []).map(parseFloat);
+      return { col, x: n[0] || 0, y: n[1] || 0, blur: n[2] || 0 };
+    });
+    const fs = parseFloat(s.fontSize) || 13;
+    L0 = { font: `${s.fontStyle} ${s.fontVariantCaps === 'small-caps' ? 'small-caps ' : ''}${s.fontWeight} ${fs}px ${s.fontFamily}`,
+      fs, lh: parseFloat(s.lineHeight) || fs * 1.1, color: s.color, spacing: s.letterSpacing === 'normal' ? '0px' : s.letterSpacing, shadows };
+    L0.key = [L0.font, L0.color, L0.spacing, s.textShadow].join('|');
+    lblProbes.set(css, L0);
+    return L0;
+  }
+  function image(src) {
+    let im = imgs.get(src);
+    if (!im) { im = new Image(); im.decoding = 'async'; im.onload = () => { isprites.clear(); epoch++; queue(); }; im.src = src; imgs.set(src, im); }
+    return im.complete && im.naturalWidth ? im : null;
+  }
+  // an icon at about the size it's shown (in steps of √2, so a zoom makes only a few), its glow drawn in
+  function iconSprite(src, flip, wCss) {
+    const im = image(src); if (!im) return null;
+    const step = Math.max(2, Math.ceil(Math.log2(Math.max(4, wCss * dpr())) * 2));
+    const key = src + (flip ? '|f|' : '||') + step;
+    let s = isprites.get(key); if (s) return s;
+    const bw = Math.pow(2, step / 2), sc = bw / wCss, bh = bw * im.naturalHeight / im.naturalWidth;
+    const blur = (look.filter.match(/[\d.]+px/g) || []).reduce((a, v) => Math.max(a, parseFloat(v)), 0);
+    const pad = Math.ceil(blur * 3 * sc + 2);
+    const c = document.createElement('canvas'); c.width = Math.ceil(bw + pad * 2); c.height = Math.ceil(bh + pad * 2);
+    const x = c.getContext('2d');
+    if (look.filter) x.filter = look.filter.replace(/(-?[\d.]+)px/g, (_, v) => (v * sc) + 'px');
+    if (flip) { x.translate(c.width, 0); x.scale(-1, 1); }
+    x.drawImage(im, pad, pad, bw, bh);
+    s = { c, pad: pad / sc, ar: im.naturalHeight / im.naturalWidth, w: c.width / sc, h: c.height / sc };
+    isprites.set(key, s);
+    return s;
+  }
+  let madeThisFrame = 0;
+  function labelSprite(name, css) {
+    const L0 = labelLook(css), key = name + '\u0001' + L0.key;
+    let s = lsprites.get(key); if (s) return s;
+    if (madeThisFrame++ > 60) { queue(); return null; }        // (a few at a time, so a first look doesn't hitch)
+    if (lsprites.size > 4000) lsprites.clear();
+    const r = dpr(), pad = Math.ceil(L0.shadows.reduce((a, q) => Math.max(a, q.blur * 1.6 + Math.abs(q.x) + Math.abs(q.y)), 0)) + 2;
+    g.save(); g.font = L0.font; g.letterSpacing = L0.spacing;
+    const mt = g.measureText(name); g.restore();
+    const w = mt.width, asc = mt.fontBoundingBoxAscent || L0.fs * 0.8, desc = mt.fontBoundingBoxDescent || L0.fs * 0.25;
+    const c = document.createElement('canvas'); c.width = Math.ceil((w + pad * 2) * r); c.height = Math.ceil((L0.lh + pad * 2) * r);
+    const x = c.getContext('2d'); x.scale(r, r);
+    x.font = L0.font; x.letterSpacing = L0.spacing; x.fillStyle = L0.color; x.textBaseline = 'alphabetic';
+    const by = pad + (L0.lh - (asc + desc)) / 2 + asc;
+    // the halo alone (the letters drawn far off, their shadow cast back), so the letters themselves are drawn just once
+    const FAR = 10000;
+    for (const q of L0.shadows) { x.shadowColor = q.col; x.shadowBlur = q.blur * r; x.shadowOffsetX = (q.x + FAR) * r; x.shadowOffsetY = q.y * r; x.fillText(name, pad - FAR, by); }
+    x.shadowColor = 'transparent'; x.fillText(name, pad, by);
+    s = { c, w: c.width / r, h: c.height / r, tw: w, pad };
+    lsprites.set(key, s);
+    return s;
+  }
+
+  function sync() {
+    order = [];
+    for (const rec of live.values()) if (rec.cv) order.push(rec);
+    order.sort((a, b) => a.m.y - b.m.y);
+    queue();
+  }
+  function queue() { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; draw(); }); }
+
+  function draw() {
+    queued = false; madeThisFrame = 0;
+    if (!look) readLook();
+    const size = map.getSize(), r = dpr();
+    const pw = Math.round(size.x * (1 + 2 * PAD)), ph = Math.round(size.y * (1 + 2 * PAD));
+    const tl = map.containerPointToLayerPoint([-size.x * PAD, -size.y * PAD]).round();
+    if (!drawnSize || drawnSize.x !== pw || drawnSize.y !== ph || cv.width !== Math.round(pw * r)) {
+      cv.width = Math.round(pw * r); cv.height = Math.round(ph * r); cv.style.width = pw + 'px'; cv.style.height = ph + 'px';
+      drawnSize = L.point(pw, ph);
+    } else g.setTransform(1, 0, 0, 1, 0, 0), g.clearRect(0, 0, cv.width, cv.height);
+    L.DomUtil.setPosition(cv, tl);
+    drawnTL = tl; drawnZ = map.getZoom(); drawnCenter = map.getCenter();
+    g.setTransform(r, 0, 0, r, 0, 0);
+    g.globalAlpha = look.alpha;
+    const zs = Math.pow(2, drawnZ - NATIVE), po = map.getPixelOrigin(), k = kNow() * look.iconScale;
+    const ox = -po.x - tl.x, oy = -po.y - tl.y;
+    hits = [];
+    for (const rec of order) {
+      if (rec.hid || rec.proxy) continue;
+      const m = rec.m, px = m.x * zs + ox, py = m.y * zs + oy;
+      const w = sizeOf(m) * k;
+      if (px < -w * 2 - 200 || py < -w * 2 - 60 || px > pw + w * 2 + 200 || py > ph + w * 2 + 60) continue;
+      const step = Math.ceil(Math.log2(Math.max(4, w * r)) * 2);
+      let sp = rec.spE === epoch && rec.spStep === step && rec.spFor === rec.sig ? rec.sp : null;
+      if (!sp) { sp = iconSprite(iconOf(m), !!m.flip, w); if (sp) { rec.sp = sp; rec.spE = epoch; rec.spStep = step; rec.spFor = rec.sig; } }
+      if (sp) {
+        const ih = w * sp.ar, x0 = px - w / 2, y0 = py - ih * 0.637;
+        g.drawImage(sp.c, x0 - sp.pad, y0 - sp.pad, sp.w * (w / (sp.w - 2 * sp.pad)), sp.h * (w / (sp.w - 2 * sp.pad)));
+        hits.push([rec, x0 + tl.x, y0 + tl.y, x0 + w + tl.x, y0 + ih + tl.y]);
+      }
+      if (!rec.nolbl) {
+        let ls = rec.lsE === epoch && rec.lsName === m.name && rec.lsCss === rec.css ? rec.ls : null;
+        if (!ls) { ls = labelSprite(m.name, rec.css); if (ls) { rec.ls = ls; rec.lsE = epoch; rec.lsName = m.name; rec.lsCss = rec.css; } }
+        if (ls) g.drawImage(ls.c, Math.round(px - ls.tw / 2 - ls.pad), Math.round(py + w * 0.28 - ls.pad), ls.w, ls.h);
+      }
+    }
+  }
+  // a zoom Leaflet animates itself (a jump to a place): scale the drawn canvas along, like Leaflet's own canvases
+  map.on('zoomanim', e => {
+    if (drawnZ == null) return;
+    const sc = map.getZoomScale(e.zoom, drawnZ), size = map.getSize();
+    const half = size.multiplyBy(0.5 + PAD);
+    const off = half.multiplyBy(-sc).add(map.project(drawnCenter, e.zoom)).subtract(map._getNewPixelOrigin(e.center, e.zoom));
+    L.DomUtil.setTransform(cv, off, sc);
+  });
+  // a zoom that glides redraws every frame; a pan only when it runs off the drawn part
+  map.on('move', () => {
+    if (drawnZ == null) return queue();
+    if (map.getZoom() !== drawnZ) return draw();
+    const size = map.getSize(), a = map.containerPointToLayerPoint([0, 0]);
+    if (a.x < drawnTL.x || a.y < drawnTL.y || a.x + size.x > drawnTL.x + drawnSize.x || a.y + size.y > drawnTL.y + drawnSize.y) draw();
+  });
+  map.on('zoomend moveend resize viewreset', () => draw());
+
+  // ── the real marker, for a while: under the mouse, chosen, being dragged
+  function proxy(rec, on) {
+    if (!!rec.proxy === !!on) return;
+    rec.proxy = !!on;
+    const mk = rec.marker;
+    if (on) {
+      if (mk.dragging && !mk._map) mk.dragging = undefined;
+      mk.options.draggable = editMode;
+      layer.addLayer(mk);
+      const el = mk.getElement();
+      if (el) {
+        el.classList.toggle('hid', !!rec.hid && !rec.sel); el.classList.toggle('nolbl', !!rec.nolbl); el.classList.toggle('sel', !!rec.sel);
+        if (!el._icvBound) { el._icvBound = true; el.addEventListener('mouseleave', () => setTimeout(() => release(rec), 160)); }
+      }
+    } else layer.removeLayer(mk);
+    queue();
+  }
+  function release(rec) {
+    if (!rec.proxy || rec.sel || rec.dragging) return;
+    const el = rec.marker.getElement();
+    if (el && el.matches(':hover')) return;
+    proxy(rec, false);
+  }
+  function hitAt(cp) {
+    const p = map.containerPointToLayerPoint(cp);
+    for (let i = hits.length - 1; i >= 0; i--) { const q = hits[i]; if (p.x >= q[1] && p.x <= q[3] && p.y >= q[2] && p.y <= q[4]) return q[0]; }
+    return null;
+  }
+  const cont = map.getContainer();
+  let mmQueued = false, mmEv = null;
+  cont.addEventListener('mousemove', e => {
+    mmEv = e; if (mmQueued) return; mmQueued = true;
+    requestAnimationFrame(() => {
+      mmQueued = false; const ev = mmEv;
+      if (map._gliding || (map.dragging && map.dragging.moving && map.dragging.moving()) || ev.buttons) return;
+      if (ev.target.closest && ev.target.closest('.mk-wrap')) return;
+      const rec = hitAt(map.mouseEventToContainerPoint(ev));
+      if (rec) proxy(rec, true);
+    });
+  }, { passive: true });
+  // a tap (no mouse to hover first): the place under it is clicked all the same
+  cont.addEventListener('click', e => {
+    if (e.target.closest && (e.target.closest('.mk-wrap') || e.target.closest('.leaflet-control-container'))) return;
+    const rec = hitAt(map.mouseEventToContainerPoint(e)); if (!rec) return;
+    e.stopPropagation();
+    proxy(rec, true);
+    rec.marker.fire('click', { originalEvent: e, latlng: map.mouseEventToLatLng(e) });
+  }, true);
+  map.on('movestart', () => { for (const rec of order) if (rec.proxy) release(rec); });
+
+  // the look changes with the page: night glow, the Underdark, label settings, a font arriving
+  const relook = () => { if (readLook()) queue(); };
+  new MutationObserver(() => { relook(); setTimeout(relook, 350); }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  new MutationObserver(relook).observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class'] });
+  if (document.fonts) document.fonts.addEventListener('loadingdone', () => { look = null; queue(); });
+
+  return { sync, queue, proxy, release, iconSize(m) {
+    const im = image(iconOf(m)); if (!im) return null;
+    const w = sizeOf(m) * kNow() * (look ? look.iconScale : 1); return { w, h: w * im.naturalHeight / im.naturalWidth };
+  } };
+})();
+
 let fogTest = null;   // set by the table: (x, y) → true where the fog of war hides a place from this player
-function applyVisibility() {
-  const z = map.getZoom();
-  for (const [id, { marker }] of live) {
-    const el = marker.getElement(); if (!el) continue;
-    const m = findMarker(id); if (!m) continue;
+function applyVisibility(at) {
+  const z = at != null ? at : map.getZoom();   // (at: the zoom a glide is heading to)
+  for (const [id, rec] of live) {
+    const m = rec.m || findMarker(id); if (!m) continue;
     const t = typeOf(m);
     const sel = id === selectedId || multiSel.has(id);
     const noIcon = !t.text && !hasIcon(m);
     const inRange = z >= (+t.minZoom || 0) && (t.maxZoom == null || t.maxZoom === '' || z <= +t.maxZoom);
     // A name-only place is nothing but its name, so an unnamed one stays hidden from visitors.
-    el.classList.toggle('hid', !(editMode || sel || (inRange && !(noIcon && m.unnamed))) || (!!fogTest && !editMode && fogTest(m.x, m.y)));
+    rec.hid = !(editMode || sel || (inRange && !(noIcon && m.unnamed))) || (!!fogTest && !editMode && fogTest(m.x, m.y));
     const labelAt = noIcon ? (+t.minZoom || 0) : (+t.labelZoom || 0);
-    el.classList.toggle('nolbl', !(sel || (z >= labelAt && (editMode || !m.unnamed))));
+    rec.nolbl = !(sel || (z >= labelAt && (editMode || !m.unnamed)));
+    rec.sel = sel;
+    if (rec.cv) { if (sel) ICV.proxy(rec, true); else if (rec.proxy) ICV.release(rec); }
+    const el = rec.marker.getElement(); if (!el) continue;
+    el.classList.toggle('hid', rec.hid);
+    el.classList.toggle('nolbl', rec.nolbl);
     el.classList.toggle('sel', sel);
   }
+  ICV.queue();
 }
 
 // ───────────────────────── undo / redo ─────────────────────────
@@ -684,6 +952,7 @@ function refresh(opts = {}) {
   syncPolitical();
   if (MT) MT.sync(); if (ARMY) ARMY.sync();
   if (AMB) AMB.refresh();
+  loadShelf(); if (shelfBrush && !editMode) setShelfBrush(null);
   if (opts.panel !== false) renderPanel();
   renderEditBar();
   renderBanner();
@@ -1827,7 +2096,8 @@ function showUnderNames() {
 map.on('zoomend', showUnderNames);
 function syncUnder() {
   if (underOn && !underLayer) {
-    underLayer = L.tileLayer(UNDER + '{z}/{y}/{x}.webp?v=1', {
+    underLayer = L.tileLayer(UNDER + '{z}/{y}/{x}.webp?v=2',   // (v2: redrawn to scale)
+      {
       tileSize: TILE, bounds, noWrap: true, minZoom: 0, maxNativeZoom: NATIVE, maxZoom: NATIVE + 1, keepBuffer: 4, opacity: underA, className: 'tiles-under'
     }).setZIndex(2);
   }
@@ -1991,16 +2261,20 @@ uniform sampler2D u_fresh; uniform float u_hasFresh;
 // the look (Map settings): sea colours, swell, speed, which effects; rivers' colour and flow
 uniform vec3 u_shallow; uniform vec3 u_mid; uniform vec3 u_deep; uniform float u_wave; uniform float u_speed; uniform vec3 u_fx;
 uniform vec3 u_river; uniform float u_flow;
+// a tile of random values (filtered by the graphics card), and the painted shallows (Map settings › The sea › Shallows)
+uniform sampler2D u_noise; uniform sampler2D u_shelf; uniform float u_hasShelf; uniform vec2 u_shelfSize;
 float hash(vec2 p) { p = fract(p * vec2(234.34, 435.345)); p += dot(p, p + 34.23); return fract(p.x * p.y); }
+// value noise in one texture read (the card blends the four corners; the curve on f keeps it smooth), not four hashes
 float vnoise(vec2 p) {
-  vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return texture2D(u_noise, (i + f + 0.5) / 256.0).r;
 }
 // Fractal noise; octaves smaller than a few screen pixels fade to their average instead of shimmering.
 // the same with three octaves, for the broad shapes
 float fbm3(vec2 p, float pxPerUnit) {
   float s = 0.0, a = 0.5;
   for (int k = 0; k < 3; k++) {
+    if (pxPerUnit < 1.5) { s += a * (2.0 - exp2(float(k) - 2.0)) * 0.5; break; }   // the rest: their average
     float vis = smoothstep(1.5, 5.0, pxPerUnit);
     s += a * mix(0.5, vnoise(p), vis);
     p = p * 2.03 + vec2(13.7, 7.1); pxPerUnit *= 0.493; a *= 0.5;
@@ -2010,6 +2284,7 @@ float fbm3(vec2 p, float pxPerUnit) {
 float fbm(vec2 p, float pxPerUnit) {
   float s = 0.0, a = 0.5;
   for (int k = 0; k < 6; k++) {
+    if (pxPerUnit < 1.5) { s += a * (1.0 - exp2(float(k) - 6.0)); break; }   // the rest: their average (half of 2a·…)
     float vis = smoothstep(1.5, 5.0, pxPerUnit);
     s += a * mix(0.5, vnoise(p), vis);
     p = p * 2.03 + vec2(13.7, 7.1); pxPerUnit *= 0.493; a *= 0.5;
@@ -2019,7 +2294,7 @@ float fbm(vec2 p, float pxPerUnit) {
 void main() {
   vec2 css = vec2(gl_FragCoord.x, u_res.y - gl_FragCoord.y) / u_dpr;
   vec2 w = u_origin + css * u_wpp;              // map pixel under this fragment
-  float px = 1.0 / u_wpp;                       // screen px per map px
+  float px = min(u_dpr, 1.0) / u_wpp;           // drawn px per map px (fewer when the sea's drawn at less than full size)
   float T = u_time * u_speed, Tf = u_time * u_flow;
   float d = 3000.0;                             // distance to the coast in map px (open sea off the mask)
   if (u_hasDist > 0.5) {
@@ -2029,12 +2304,17 @@ void main() {
     float fine = t.r * 255.0 / 4.0 * u_cell, coarse = t.a * 255.0 * 2.0 * u_cell;
     d = mix(fine, coarse, smoothstep(380.0, 500.0, fine)) + length(w - wc);
   }
+  // how far out this stretch of coast's shallows reach (painted: ¼× to 4×), and the distance counted that way
+  float sf = 1.0;
+  if (u_hasShelf > 0.5) sf = exp2((texture2D(u_shelf, clamp(w / u_shelfSize, 0.0, 1.0)).r - 0.5) * 4.0);
+  float ds = d / sf;
   // ── depth: the shallows hug the coast, a shelf whose edge wanders, then the deep
   float shelfN = fbm3(w / 2600.0 + vec2(3.1, 7.4), 2600.0 * px);
-  float sh = smoothstep(0.0, 1.0, smoothstep(0.0, 200.0, d) * 0.55 + smoothstep(110.0, 950.0, d) * 0.45 + (shelfN - 0.5) * 0.3);
+  float sh = smoothstep(0.0, 1.0, smoothstep(0.0, 90.0, ds) * 0.6 + smoothstep(60.0, 480.0, ds) * 0.4 + (shelfN - 0.5) * 0.3);   // (a narrow shelf: real shallows are a thin strip at map scale)
   vec3 col = mix(u_shallow, u_mid, sh);
-  float deepK = smoothstep(500.0, 4200.0, d + (shelfN - 0.5) * 900.0);
+  float deepK = smoothstep(250.0, 2600.0, ds + (shelfN - 0.5) * 700.0);
   col = mix(col, u_deep, deepK);
+  col *= 1.0 - 0.07 * smoothstep(2500.0, 9000.0, d);   // the open ocean darker still
   // ── long, soft streaks of swell drifting with the wind (domain-warped, stretched along the wind)
   vec2 q = w / 560.0;
   vec2 wq = vec2(fbm3(q + vec2(0.0, T * 0.018), 560.0 * px), fbm3(q + vec2(5.2, 1.3) - vec2(T * 0.014, 0.0), 560.0 * px));
@@ -2044,39 +2324,80 @@ void main() {
   float mott = fbm3(w / 1400.0 + vec2(-T * 0.004, T * 0.003), 1400.0 * px);
   col *= 0.94 + 0.12 * mott;
   col = mix(col, col * vec3(0.92, 1.0, 1.04), smoothstep(0.35, 0.75, mott) * deepK);   // a cooler blue far out
-  // ── small waves catching the light, once they're big enough on screen to see
-  float wv = smoothstep(4.0, 12.0, 48.0 * px) * u_wave;
+  // ── the wind on the water. From any height: long slicks where the sea lies calm and smooth, between rougher
+  // stretches (a darker, rumpled texture), drawn out along the wind. Up close: the waves themselves, as irregular
+  // noise stretched across the wind, not rows, lit from the north-west, rougher where the wind is.
+  vec2 wd = vec2(0.86, 0.51), wn = vec2(-wd.y, wd.x);
+  vec2 wr = vec2(dot(w, wd), dot(w, wn));                       // along / across the wind
+  float rough = fbm3(vec2(wr.x / 2600.0, wr.y / 700.0) + wq * 0.6 + vec2(-T * 0.004, 0.0), 700.0 * px);
+  rough = smoothstep(0.32, 0.72, rough);
+  col *= mix(1.03, 0.95, rough);                                // slicks paler and smoother, rough water darker
+  float wv = smoothstep(16.0, 34.0, 70.0 * px) * u_wave;
   if (wv > 0.001) {
-    vec2 wp = vec2(w.x / 120.0 + T * 0.07, w.y / 48.0) + wq * 1.2;
-    float e = 0.35;
-    float h0 = vnoise(wp) * 0.65 + vnoise(wp * 2.1 + vec2(T * 0.07, 3.3)) * 0.35;
-    float hx = vnoise(wp + vec2(e, 0.0)) * 0.65 + vnoise((wp + vec2(e, 0.0)) * 2.1 + vec2(T * 0.07, 3.3)) * 0.35;
-    float hy = vnoise(wp + vec2(0.0, e)) * 0.65 + vnoise((wp + vec2(0.0, e)) * 2.1 + vec2(T * 0.07, 3.3)) * 0.35;
-    vec3 n = normalize(vec3((h0 - hx) * 2.6, (h0 - hy) * 2.6, 1.0));
+    // the wave height: two broad octaves, then finer ones that only come in as you zoom close enough to see them
+    // (so up close the water has crisp small waves on the big ones, rather than the big ones blurred up)
+    float det1 = smoothstep(4.0, 10.0, 34.0 / 2.9 * px), det2 = smoothstep(4.0, 10.0, 34.0 / 7.1 * px);
+    vec2 wp = vec2(wr.x / 110.0, wr.y / 34.0) + wq * 1.6 + vec2(-T * 0.11, T * 0.02);
+    vec2 tf = vec2(-T * 0.23, T * 0.05), tg = vec2(-T * 0.41, -T * 0.07);
+    float e = 0.12;
+    vec2 ex = vec2(e, 0.0), ey = vec2(0.0, e);
+    #define WB(q) (vnoise(q) * 0.55 + vnoise((q) * 2.3 + vec2(3.3, -T * 0.08)) * 0.3)
+    #define W1(q) (vnoise((q) * 2.9 * vec2(1.0, 1.6) + tf + 7.1) * 0.22)
+    #define W2(q) (vnoise((q) * 7.1 * vec2(1.0, 1.9) + tg + 2.3) * 0.12)
+    float h0 = WB(wp), hx = WB(wp + ex), hy = WB(wp + ey);
+    if (det1 > 0.001) { h0 += det1 * W1(wp); hx += det1 * W1(wp + ex); hy += det1 * W1(wp + ey); }   // (only worked out once you're close enough)
+    if (det2 > 0.001) { h0 += det2 * W2(wp); hx += det2 * W2(wp + ex); hy += det2 * W2(wp + ey); }
+    float amp = (0.35 + 0.65 * rough) * wv;
+    vec2 g = vec2(h0 - hx, h0 - hy) / e * 0.42;
+    vec3 n = normalize(vec3(g.x * wd + g.y * wn, 1.0));
     float lit = dot(n, normalize(vec3(-0.45, -0.6, 0.66)));
-    col *= mix(1.0, 0.93 + 0.12 * lit, wv);
-    float sp = pow(max(0.0, dot(reflect(normalize(vec3(0.45, 0.6, -0.66)), n), vec3(0.0, 0.0, 1.0))), 48.0);
-    col += vec3(0.20, 0.22, 0.19) * sp * wv * smoothstep(60.0, 260.0, d) * 0.35;
+    col *= 1.0 + (lit - 0.78) * (0.2 + 0.1 * det1) * amp;
+    float sp = pow(max(0.0, dot(reflect(normalize(vec3(0.45, 0.6, -0.66)), n), vec3(0.0, 0.0, 1.0))), 20.0 + 40.0 * det2);
+    col += vec3(0.16, 0.18, 0.16) * sp * amp * smoothstep(60.0, 260.0, d) * (0.1 + 0.25 * det1);
+    // whitecaps: small, soft-edged, on the tops of the waves in rough water well offshore; streaked downwind
+    float cap = smoothstep(0.66, 0.86, h0) * smoothstep(0.65, 0.95, rough) * smoothstep(300.0, 1000.0, d) * smoothstep(2.0, 5.0, 10.0 * px);
+    if (cap > 0.001) {
+      float fl = vnoise(vec2(wr.x / 16.0, wr.y / 6.0) + vec2(-T * 0.35, T * 0.1)) * 0.65 + vnoise(vec2(wr.x / 6.0, wr.y / 3.0) - vec2(T * 0.5, 0.0)) * 0.35;
+      col = mix(col, vec3(0.86, 0.92, 0.9), cap * smoothstep(0.6, 0.78, fl) * wv * 0.45);
+    }
   }
-  // ── the coast's echo: a few broken lines following the shore, as on a drawn map (Ripples)
-  float dd = d + (vnoise(w / 70.0) - 0.5) * 12.0;
-  float lw = max(1.4 * u_wpp, 1.6), aa = 1.2 * u_wpp;
-  float echo = 0.0;
-  for (int k = 0; k < 3; k++) {
-    float fk = float(k);
-    float c = 15.0 + 24.0 * fk + 2.5 * sin(T * 0.35 + fk * 1.7);
-    float ln = 1.0 - smoothstep(lw, lw + aa, abs(dd - c));
-    float broken = smoothstep(0.32, 0.5, vnoise(w / (38.0 + fk * 14.0) + vec2(fk * 7.0, T * 0.02)));
-    echo += ln * broken * (0.34 - fk * 0.1);
+  // ── the shallows: sunlight rippling over the bottom, only in the strip of water right by the shore, and only close up
+  float cv = smoothstep(3.0, 8.0, 30.0 * px) * smoothstep(70.0 * sf, 8.0, d) * u_hasDist * u_fx.x;
+  if (cv > 0.001) {
+    vec2 cp = w / 22.0;
+    vec2 cw = cp + vec2(vnoise(cp * 0.7 + T * 0.15), vnoise(cp * 0.7 + 5.0 - T * 0.12)) * 1.8;
+    float c1 = abs(sin(cw.x * 1.7 + sin(cw.y * 1.3 + T * 0.7))), c2 = abs(sin(cw.y * 1.5 + sin(cw.x * 1.1 - T * 0.55)));
+    col += vec3(0.08, 0.1, 0.08) * pow(1.0 - min(c1, c2), 5.0) * cv;
   }
-  float echoVis = smoothstep(2.5, 6.5, 24.0 * px) * u_hasDist * u_fx.x;
-  col = mix(col, vec3(0.80, 0.88, 0.84), clamp(echo, 0.0, 1.0) * echoVis);
-  // from further out, a soft pale band along the shore instead
-  col = mix(col, mix(u_shallow, vec3(0.82, 0.88, 0.82), 0.35), smoothstep(150.0, 0.0, d) * 0.28 * u_hasDist * (1.0 - echoVis * 0.6));
-  // ── surf at the waterline: soft, broken, breathing in and out
-  float fn = fbm(w / 20.0 + vec2(T * 0.28, -T * 0.16), 20.0 * px);
-  float foam = smoothstep(17.0, 2.0, d + (fn - 0.5) * 18.0 - 3.5 * sin(T * 0.9 + d * 0.12));
-  col = mix(col, vec3(0.90, 0.93, 0.88), foam * 0.55 * u_hasDist * u_fx.y);
+  // ── cloud shadows drifting over the sea, big and soft, seen from any height
+  float cs = fbm3(w / 4200.0 + vec2(T * 0.0045, T * 0.0018), 4200.0 * px);
+  col *= 1.0 - 0.13 * smoothstep(0.52, 0.8, cs) * smoothstep(150.0, 600.0, d);
+  // (the coast's lines, band and surf are only worked out near a coast: the open sea skips them)
+  if (d < 170.0) {
+    // ── the coast's echo: a few broken lines following the shore, as on a drawn map (Ripples)
+    float echoVis = smoothstep(2.5, 6.5, 24.0 * px) * u_hasDist * u_fx.x;
+    float echo = 0.0;
+    if (echoVis > 0.001 && d < 95.0) {
+    float dd = d + (vnoise(w / 70.0) - 0.5) * 12.0;
+    float lw = max(1.4 * u_wpp, 1.6), aa = 1.2 * u_wpp;
+    for (int k = 0; k < 3; k++) {
+      float fk = float(k);
+      float c = 15.0 + 24.0 * fk + 2.5 * sin(T * 0.35 + fk * 1.7);
+      float ln = 1.0 - smoothstep(lw, lw + aa, abs(dd - c));
+      float broken = smoothstep(0.32, 0.5, vnoise(w / (38.0 + fk * 14.0) + vec2(fk * 7.0, T * 0.02)));
+      echo += ln * broken * (0.34 - fk * 0.1);
+    }
+    }
+    col = mix(col, vec3(0.80, 0.88, 0.84), clamp(echo, 0.0, 1.0) * echoVis);
+    // from further out, a soft pale band along the shore instead
+    col = mix(col, mix(u_shallow, vec3(0.82, 0.88, 0.82), 0.35), smoothstep(150.0, 0.0, d) * 0.28 * u_hasDist * (1.0 - echoVis * 0.6));
+    // ── surf at the waterline: soft, broken, breathing in and out
+    if (d < 32.0 && u_fx.y > 0.5) {
+      float fn = fbm(w / 20.0 + vec2(T * 0.28, -T * 0.16), 20.0 * px);
+      float foam = smoothstep(17.0, 2.0, d + (fn - 0.5) * 18.0 - 3.5 * sin(T * 0.9 + d * 0.12));
+      col = mix(col, vec3(0.90, 0.93, 0.88), foam * 0.55 * u_hasDist);
+    }
+  }
   // under solid land (the tiles cover it) a muted earth colour, so a hairline gap between tiles doesn't flash white
   col = mix(col, vec3(0.40, 0.38, 0.31), (1.0 - smoothstep(0.0, 2.0, d)) * u_hasDist);
   // ── the odd glint on open water: rare, small and soft
@@ -2169,9 +2490,17 @@ const OceanLayer = L.Layer.extend({
     gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
     const loc = gl.getAttribLocation(pr, 'a'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-    this._u = {}; for (const n of ['u_origin', 'u_wpp', 'u_dpr', 'u_res', 'u_time', 'u_dist', 'u_cells', 'u_cell', 'u_hasDist', 'u_fresh', 'u_hasFresh', 'u_shallow', 'u_mid', 'u_deep', 'u_wave', 'u_speed', 'u_fx', 'u_river', 'u_flow']) this._u[n] = gl.getUniformLocation(pr, n);
+    this._u = {}; for (const n of ['u_origin', 'u_wpp', 'u_dpr', 'u_res', 'u_time', 'u_dist', 'u_cells', 'u_cell', 'u_hasDist', 'u_fresh', 'u_hasFresh', 'u_shallow', 'u_mid', 'u_deep', 'u_wave', 'u_speed', 'u_fx', 'u_river', 'u_flow', 'u_noise', 'u_shelf', 'u_hasShelf', 'u_shelfSize']) this._u[n] = gl.getUniformLocation(pr, n);
     this.setLook({});
     gl.uniform1f(this._u.u_hasDist, 0); gl.uniform1i(this._u.u_dist, 0); gl.uniform1f(this._u.u_hasFresh, 0); gl.uniform1i(this._u.u_fresh, 1);
+    // the noise tile (unit 2): random values, repeating, filtered
+    { const n = new Uint8Array(256 * 256); for (let i = 0; i < n.length; i++) n[i] = Math.random() * 256;
+      const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, t); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, 256, 256, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, n);
+      for (const [k, val] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.REPEAT], [gl.TEXTURE_WRAP_T, gl.REPEAT]]) gl.texParameteri(gl.TEXTURE_2D, k, val);
+      gl.uniform1i(this._u.u_noise, 2); }
+    gl.uniform1i(this._u.u_shelf, 3); gl.uniform1f(this._u.u_hasShelf, 0);
+    gl.activeTexture(gl.TEXTURE0);
     return true;
   },
   // Map settings › Sea and Rivers: colours ('#rrggbb'), swell (0-2), speed (0 = still), ripples/foam/glints, river colour and flow
@@ -2184,6 +2513,23 @@ const OceanLayer = L.Layer.extend({
     gl.uniform1f(u.u_wave, num(s.waves, 1)); gl.uniform1f(u.u_speed, num(s.speed, 1));
     gl.uniform3f(u.u_fx, s.ripples === false ? 0 : 1, s.foam === false ? 0 : 1, s.glints === false ? 0 : 1);
     gl.uniform3fv(u.u_river, c(f.color, '#54919a')); gl.uniform1f(u.u_flow, num(f.flow, 1));
+    if (this._origin) this._draw(performance.now() / 1000);
+  },
+  // The painted shallows (unit 3): one byte per cell of `cell` map px, 128 = as usual, 0 = a quarter as far, 255 = 4×.
+  setShelf(bytes, w, h, cell) {
+    if (this._failed || !this._gl) return;
+    const gl = this._gl;
+    if (!bytes) { gl.uniform1f(this._u.u_hasShelf, 0); if (this._origin) this._draw(performance.now() / 1000); return; }
+    gl.activeTexture(gl.TEXTURE3);
+    if (!this._shelfTex || this._shelfW !== w || this._shelfH !== h) {
+      if (!this._shelfTex) this._shelfTex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, this._shelfTex); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, w, h, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, bytes);
+      for (const [k, val] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, val);
+      this._shelfW = w; this._shelfH = h;
+    } else { gl.bindTexture(gl.TEXTURE_2D, this._shelfTex); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h, gl.LUMINANCE, gl.UNSIGNED_BYTE, bytes); }
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1f(this._u.u_hasShelf, 1); gl.uniform2f(this._u.u_shelfSize, w * cell, h * cell);
     if (this._origin) this._draw(performance.now() / 1000);
   },
   // Distance from each sea cell to the nearest land, packed into two channels: fine (to 512 map px) and coarse.
@@ -2219,7 +2565,9 @@ const OceanLayer = L.Layer.extend({
     const full = size.multiplyBy(1 + 2 * p).round();
     this._center = m.getCenter(); this._zoom = m.getZoom();
     L.DomUtil.setPosition(this._canvas, min);
-    const dpr = this._dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    // fewer pixels drawn where the sea is all soft colour (zoomed out), every one up close where the waves are fine
+    const z = m.getZoom(), q = z < NATIVE - 2.5 ? 0.62 : z < NATIVE - 1.25 ? 0.8 : 1;
+    const dpr = this._dpr = Math.min(window.devicePixelRatio || 1, 1.5) * q;
     const c = this._canvas, cw = Math.max(1, Math.round(full.x * dpr)), ch = Math.max(1, Math.round(full.y * dpr));
     if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch; c.style.width = full.x + 'px'; c.style.height = full.y + 'px'; }   // (a new size clears and reallocates it: only when it changes)
     this._full = full;
@@ -2247,7 +2595,10 @@ const OceanLayer = L.Layer.extend({
   _go() { this._moving = true; },
   _halt() { this._moving = false; },
   _frame(t) {
-    if (document.hidden || t - (this._last || 0) < 1000 / (this._moving ? 12 : this.options.fps)) return;   // (the waves slow while the map moves: it's busy)
+    const z = this._zoom == null ? NATIVE : this._zoom;
+    // (zoomed out, the sea's movement is too slow to see at 30 a second: fewer frames there, and fewer while the map moves)
+    const fps = this._moving ? 12 : z < NATIVE - 3 ? 12 : z < NATIVE - 1.5 ? 20 : this.options.fps;
+    if (document.hidden || t - (this._last || 0) < 1000 / fps) return;   // (the waves slow while the map moves: it's busy)
     this._last = t; this._draw(t / 1000);
   },
   _draw(time) {
@@ -2315,6 +2666,71 @@ function edt2d(g, w, h) {
 
 let ocean = null;
 if (OCEAN_ON) { document.body.classList.add('has-ocean'); ocean = new OceanLayer().addTo(map); }
+
+// ───────────────────────── the shallows, painted ─────────────────────────
+// How far out the shallow water reaches along each coast, painted with a brush (Map settings › The sea, for editors):
+// further out for a broad shelf of sandbanks, shorter for cliffs dropping straight into the deep. Kept in the map's
+// data as a small greyscale picture, one pixel per 64 map px (mid-grey: as usual), so everyone sees the same sea.
+var SHELF_CELL = 64, shelf = null, shelfSig = null, shelfBrush = null, shelfPainting = false, shelfLast = 0;
+function shelfGrid() { return { w: Math.ceil(INFO.width / 64), h: Math.ceil(INFO.height / 64) }; }
+function loadShelf() {   // the map's data into the sea: after loading, an undo, or someone else's change
+  const sd = data && data.settings && data.settings.shelf, sig = sd && sd.png ? sd.png : '';
+  if (sig === shelfSig || shelfPainting) return; shelfSig = sig;
+  if (!sig) { shelf = null; if (ocean) ocean.setShelf(null); return; }
+  const img = new Image();
+  img.onload = () => {
+    if (shelfSig !== sig) return;   // (superseded meanwhile)
+    const { w, h } = shelfGrid(), c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d'); g.drawImage(img, 0, 0, w, h);
+    const px = g.getImageData(0, 0, w, h).data, b = new Uint8Array(w * h);
+    for (let i = 0; i < b.length; i++) b[i] = px[i * 4];
+    shelf = { w, h, bytes: b }; if (ocean) ocean.setShelf(b, w, h, 64);
+  };
+  img.src = sig;
+}
+function saveShelf() {
+  const { w, h, bytes } = shelf, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'), im = g.createImageData(w, h);
+  for (let i = 0; i < bytes.length; i++) { const k = i * 4; im.data[k] = im.data[k + 1] = im.data[k + 2] = bytes[i]; im.data[k + 3] = 255; }
+  g.putImageData(im, 0, 0);
+  const flat = bytes.every(v => v === 128), png = flat ? '' : c.toDataURL('image/png');
+  shelfSig = png;
+  change(() => { if (flat) delete data.settings.shelf; else data.settings.shelf = { cell: 64, w, h, png }; }, { panel: false });
+}
+const shelfRing = h('div', { class: 'shelfring', hidden: true });
+map.getContainer().appendChild(shelfRing);
+function setShelfBrush(o) {
+  shelfBrush = o && editMode ? Object.assign({ mode: 'wider', size: 600, strength: 0.5 }, shelfBrush || {}, o) : null;
+  document.body.classList.toggle('shelf-painting', !!shelfBrush);
+  if (shelfBrush) { map.dragging.disable(); if (!shelf) { const { w, h } = shelfGrid(); shelf = { w, h, bytes: new Uint8Array(w * h).fill(128) }; } }
+  else { map.dragging.enable(); shelfRing.hidden = true; }
+}
+function shelfRingAt(ll) {
+  const c = map.latLngToContainerPoint(ll), r = shelfBrush.size * Math.pow(2, map.getZoom() - NATIVE);
+  shelfRing.hidden = false;
+  shelfRing.style.cssText = `left:${c.x - r}px;top:${c.y - r}px;width:${2 * r}px;height:${2 * r}px`;
+}
+function paintShelf(ll, ms) {
+  const p = toPixel(ll), { w, h, bytes } = shelf, r = shelfBrush.size / 64, cx = p.x / 64, cy = p.y / 64;
+  const amt = shelfBrush.strength * ms * 0.25;
+  for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(h - 1, Math.ceil(cy + r)); y++)
+    for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(w - 1, Math.ceil(cx + r)); x++) {
+      const t = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / r; if (t >= 1) continue;
+      const f = (1 - t * t) * (1 - t * t), i = y * w + x, v = bytes[i];   // a soft brush
+      bytes[i] = shelfBrush.mode === 'wider' ? Math.min(255, v + amt * f) : shelfBrush.mode === 'shorter' ? Math.max(0, v - amt * f) : v + (128 - v) * Math.min(1, amt * f / 40);
+    }
+  if (ocean) ocean.setShelf(bytes, w, h, 64);
+}
+map.on('mousedown', e => { if (!shelfBrush || e.originalEvent.button !== 0) return; shelfPainting = true; shelfLast = performance.now(); paintShelf(e.latlng, 30); });
+map.on('mousemove', e => {
+  if (!shelfBrush) return;
+  shelfRingAt(e.latlng);
+  if (shelfPainting) { const t = performance.now(); paintShelf(e.latlng, Math.min(60, t - shelfLast)); shelfLast = t; }
+});
+map.on('zoom', () => { if (shelfBrush) shelfRing.hidden = true; });
+map.on('mouseout', () => { shelfRing.hidden = true; });
+document.addEventListener('mouseup', () => { if (shelfPainting) { shelfPainting = false; saveShelf(); } });
+document.addEventListener('keydown', e => { if (shelfBrush && e.key === 'Escape') { setShelfBrush(null); renderPanel(); } });
 
 // ───────────────────────── edit mode, toolbar, banner ─────────────────────────
 
@@ -3352,7 +3768,10 @@ MT = window.ValanarMapTools ? window.ValanarMapTools({
   openPanel: (m, stay) => { if (stay && panelMode === m) renderPanel(); else { if (placing) stopPlacing(); openPanel(m); } },
   editMode: () => editMode, rulerOn: () => rulerOn, ocean: () => ocean, fmtTravel, panelMode: () => panelMode,
   pages: () => pages, findPage, wikiHref, applyView,
-  names: () => NAMES,
+  names: () => NAMES, textToNames: list => textToNames(list), typeOf,
+  shelfBrush: () => shelfBrush, setShelfBrush: (o, quiet) => { setShelfBrush(o); if (!quiet) renderPanel(); }, shelfPainted: () => !!(data.settings && data.settings.shelf),
+  clearShelf: () => { const { w, h } = shelfGrid(); shelf = { w, h, bytes: new Uint8Array(w * h).fill(128) }; if (ocean) ocean.setShelf(null); saveShelf(); renderPanel(); },
+  textPlaces: () => data.markers.filter(m => typeOf(m).text && isFinite(m.x)),
   // the nation at a map pixel: from the borders when they've been worked out, else the nearest place's
   nationNear: (x, y) => {
     const n = pol && nationAt(x, y); if (n) return n.name;
@@ -3376,7 +3795,7 @@ loadLand(() => {
       if (MT) MT.landChanged();
       if (MT && r.net) MT.setRivers(r.net);
       if (AMB) AMB.landReady();
-      if (ocean) { ocean.setLand(Land, r.tex); if (r.rgba) ocean.setFresh(Land, r.rgba); if (MT) MT.applyLook(); }
+      if (ocean) { ocean.setLand(Land, r.tex); if (r.rgba) ocean.setFresh(Land, r.rgba); if (shelf) ocean.setShelf(shelf.bytes, shelf.w, shelf.h, 64); if (MT) MT.applyLook(); }
     })
     .catch(e => { console.warn('Couldn’t find the rivers:', e); schedulePolitical(); if (ocean) ocean.setLand(Land); });
 });
@@ -4158,9 +4577,8 @@ window.VALANAR = { get ambience() { return AMB; }, canEdit: CAN_EDIT, setEditMod
   setRuler: on => { if (!!on !== rulerOn) setRuler(!!on); },
   // the places with an icon, for tokens to stand at: where, and how big the icon is on screen now (0: not shown)
   places: () => data.markers.filter(m => !typeOf(m).text && hasIcon(m)).map(m => {
-    const rec = live.get(m.id), el = rec && rec.marker.getElement(), img = el && !el.classList.contains('hid') && el.querySelector('img');
-    const r = img ? img.getBoundingClientRect() : null;
-    return { id: m.id, name: m.name, type: m.type, x: m.x, y: m.y, r: r && r.width ? Math.max(r.width, r.height) / 2 : 0 };
+    const rec = live.get(m.id), r = rec && !rec.hid ? ICV.iconSize(m) : null;
+    return { id: m.id, name: m.name, type: m.type, x: m.x, y: m.y, r: r && r.w ? Math.max(r.w, r.h) / 2 : 0 };
   }),
   // keep the view to a box of the map ({ x0, y0, x1, y1 } in map pixels), or let it go again (null)
   restrict: box => {

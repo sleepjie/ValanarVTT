@@ -56,6 +56,26 @@ function attacksOf(ch, a) {
   }
   return out;
 }
+// a creature's own actions (the NPC side of the community sheet: twenty rows, and its multiattack), each a button
+function npcActionsOf(ch, a) {
+  const out = [];
+  if (ch.sheet !== 'dnd5e' || !(+a.is_npc || a.npc_action_name1)) return out;
+  if (clean(a.npc_multiattack)) out.push({ name: 'Multiattack', text: clean(a.npc_multiattack), type: 'Action', multi: true });
+  for (let i = 1; i <= 20; i++) {
+    const n = clean(a['npc_action_name' + i]); if (!n) continue;
+    const text = clean(a['npc_action_description' + i]), type = String(a['npc_action_type' + i] || '').replace(/[()]/g, '').replace(/^Normal /, '').trim() || 'Action';
+    out.push({ name: n, text, type, ref: 'NPCAction' + i, ranged: /Ranged Attack/i.test(text), attack: /Attack Roll/i.test(text), save: /Saving Throw|\bDC \d+/i.test(text) });
+  }
+  return out;
+}
+// its traits (written on the sheet as "Name. What it does." paragraphs): for the Features tray
+function npcTraitsOf(ch, a) {
+  if (ch.sheet !== 'dnd5e' || !+a.is_npc) return [];
+  return String(a.npc_traits || '').split(/\n\s*\n/).map(b => b.trim()).filter(b => b && b !== 'None').map((b, i) => {
+    const m = /^([^.\n]{1,80}?(?:\([^)]*\))?)\.\s+([\s\S]*)$/.exec(b);
+    return { id: 'npctrait:' + i, kind: 'custom', name: clean(m ? m[1] : b.slice(0, 40)), text: clean(m ? m[2] : b), cls: 'Trait' };
+  });
+}
 function spellsOf(ch, a) {
   const list = [];
   const legacy = ch.sheet === 'dnd5e_legacy';
@@ -106,7 +126,7 @@ function sheetFeatures(ch, a) {
   return out;
 }
 function featuresOf(ch, a) {
-  const own = sheetFeatures(ch, a), srd = V.featuresFor ? V.featuresFor(a) : [];
+  const own = sheetFeatures(ch, a).concat(npcTraitsOf(ch, a)), srd = +a.is_npc ? [] : V.featuresFor ? V.featuresFor(a) : [];
   const names = new Set(own.map(f => f.name.toLowerCase()));
   // the sheet's own write-up wins over the SRD card of the same name (it may be a newer edition, or homebrew)
   const all = srd.filter(f => !names.has(f.name.toLowerCase())).concat(own.map(f => Object.assign(f, { gi: iconFor(f) })));
@@ -205,6 +225,12 @@ function draw() {
     if (atks.length) parts.push(h('div', { class: 'hbgrp' }, ...atks.slice(0, 6).map(at =>
       btn('atk', at.kind === 'ranged' ? 'bow-arrow' : 'sword-brandish', at.name, `${at.name}${at.hit ? ' · ' + (/^[+-]/.test(at.hit) ? at.hit : '+' + at.hit) + ' to hit' : ''}${at.dmg ? ' · ' + at.dmg : ''}\nClick to roll`, () => rollAttack(ch, at),
         { oncontextmenu: e => { e.preventDefault(); V.openSheet(ch.id); } }))));
+    const npc = npcActionsOf(ch, a);
+    if (npc.length) parts.push(h('div', { class: 'hbgrp' }, ...npc.slice(0, 12).map(x =>
+      btn('atk', x.multi ? 'crossed-swords' : x.ranged ? 'bow-arrow' : x.attack ? 'sword-brandish' : x.save ? 'magic-swirl' : 'star-swirl', x.name,
+        `${x.name}${x.type && x.type !== 'Action' ? ' (' + x.type + ')' : ''}\n${x.text}\n\n${x.ref ? 'Click to use it (from the sheet)' : 'Click to show it in the chat'} · right-click for the sheet`,
+        () => x.ref ? V.runSheetButton(ch.id, x.ref) : V.featureToChat({ id: 'npc:multi', kind: 'custom', name: x.name, text: x.text, cls: ch.name }, { as: ch.name }),
+        { oncontextmenu: e => { e.preventDefault(); V.openSheet(ch.id); } }))));
     const sps = spellsOf(ch, a), feats = featuresOf(ch, a);
     const grp = [];
     if (sps.length) grp.push(btn('tray spells' + (tray && tray.kind === 'spells' ? ' on' : ''), 'spell-book', `Spells`, 'Cantrips and prepared spells', () => openTray('spells'), { 'data-n': sps.length }));
@@ -299,5 +325,5 @@ function showBag(anchor, ch) {
 }
 function hideBag(now) { clearTimeout(bagT); bagT = setTimeout(() => { if (bagPop) bagPop.hidden = true; }, now ? 0 : 220); }
 
-V.hotbar = { update, attacksOf, spellsOf, featuresOf, attrs };
+V.hotbar = { update, attacksOf, spellsOf, featuresOf, npcActionsOf, attrs };
 })();
