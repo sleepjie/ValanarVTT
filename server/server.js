@@ -266,7 +266,8 @@ const ISO_LIGHTS = {
 const ISO_KIND = { house: 'in', hall: 'in', ruins: 'under', ruins_ice: 'under', cave: 'under', keep: 'under' };   // (maps saved before the forge said)
 function cleanIso(m) {
   const w = Math.round(num(m.w, 0, 1, 128)), h = Math.round(num(m.h, 0, 1, 128)), b64 = (v, n) => { const t = String(v || ''); return /^[A-Za-z0-9+/=]*$/.test(t) && t.length <= Math.ceil(n / 3) * 4 + 4 ? t : ''; };
-  return { v: 2, biome: /^[a-z_]{1,16}$/.test(String(m.biome || '')) ? String(m.biome) : 'grass', w, h, terr: b64(m.terr, w * h), over: b64(m.over, w * h * 2), obj: b64(m.obj, w * h * 2), edge: b64(m.edge, w * h), flip: b64(m.flip, w * h), lv: b64(m.lv, w * h),   // (the land's height: the forge's rises and their cliffs)
+  return { v: 2, biome: /^[a-z_]{1,16}$/.test(String(m.biome || '')) ? String(m.biome) : 'grass', w, h, terr: b64(m.terr, w * h), over: b64(m.over, w * h * 2), obj: b64(m.obj, w * h * 2), edge: b64(m.edge, w * h), flip: b64(m.flip, w * h), lv: b64(m.lv, w * h), sc: b64(m.sc, w * h), off: b64(m.off, w * h * 2),   // (pieces sized and nudged off the grid in the forge)
+      // (the land's height: the forge's rises and their cliffs)
     // what the forge worked out for the table: the sort of map, where its lights are (cells, a kind each), the houses' footprints
     kind: ['out', 'under', 'in'].includes(m.kind) ? m.kind : null,
     lights: (Array.isArray(m.lights) ? m.lights : []).slice(0, 300).filter(l => Array.isArray(l) && l.length >= 3).map(l => [num(l[0], 0, -1, 129), num(l[1], 0, -1, 129), Object.hasOwn(ISO_LIGHTS, String(l[2])) ? String(l[2]) : 'torch']),

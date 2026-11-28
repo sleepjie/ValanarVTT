@@ -101,7 +101,7 @@ function tick() {
   for (const [k, boxes] of hits) {
     if (n++ > 80) break;
     const o = cache.standing[k], sp = new PIXI.Sprite(spriteTex(o.s));
-    if (o.flip) { sp.scale.x = -1; sp.position.set(o.dx + o.w, o.dy); } else sp.position.set(o.dx, o.dy); sp.alpha = SEE; sp.tint = (shade << 16) | (shade << 8) | shade;
+    const k = o.k || 1; if (o.flip) { sp.scale.set(-k, k); sp.position.set(o.dx + o.w, o.dy); } else { sp.scale.set(k, k); sp.position.set(o.dx, o.dy); }   // (a piece sized in the forge) sp.alpha = SEE; sp.tint = (shade << 16) | (shade << 8) | shade;
     const mask = new PIXI.Graphics(); mask.beginFill(0xffffff);
     for (const [x, y, r] of boxes) mask.drawCircle(x, y, r);
     mask.endFill();

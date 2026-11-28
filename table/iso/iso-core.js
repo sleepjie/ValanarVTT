@@ -69,7 +69,15 @@ function mirrorOf(id) {
 }
 // a sprite as drawn mirrored: its footprint reaches back the other way
 const mirrored = s => s && Object.assign({}, s, { fw: s.fh, fh: s.fw, flip: 1 });
-const spriteAt = (m, i, id) => { const s = sprite(m.biome, id); return m.flip && m.flip[i] ? mirrored(s) : s; };
+// a piece as placed at cell i: mirrored (m.flip), scaled (m.sc: 0 as drawn, else a percentage) and nudged off the cell's
+// centre (m.off: two signed bytes a cell, screen pixels across and down) — the forge's Ctrl+wheel and Alt placing
+const spriteAt = (m, i, id) => {
+  let s = sprite(m.biome, id); if (!s) return s;
+  if (m.flip && m.flip[i]) s = mirrored(s);
+  const k = m.sc && m.sc[i] ? m.sc[i] / 100 : 1, dx = m.off ? m.off[i * 2] : 0, dy = m.off ? m.off[i * 2 + 1] : 0;
+  return k !== 1 || dx || dy ? Object.assign({}, s, { k, dx, dy }) : s;
+};
+const SCALES = [50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200];
 // flip the piece at cell i: swap it for its turned twin, or mirror it
 function flipAt(m, i) { const id = m.obj[i]; if (!id) return false; const t = mirrorOf(id); if (t) m.obj[i] = t; else { if (!m.flip) m.flip = new Uint8Array(m.w * m.h); m.flip[i] ^= 1; } return true; }
 
@@ -77,7 +85,7 @@ function flipAt(m, i) { const id = m.obj[i]; if (!id) return false; const t = mi
 // edge: indoors, the walls between rooms and the doors: per cell, bit 1 a wall on its W edge (towards x - 1), bit 2 on its
 // N edge (towards y - 1), bit 4 a door in the W edge, bit 8 a door in the N edge. Underground, bit 16 on a rock cell: a wall
 // built in the forge, drawn as a stub where floor lies behind it (where a dug-out wall would be left out). Walls round the outside are worked out.
-function blank(w, h, biome) { return { v: 2, biome: biome || 'grass', w, h, terr: new Uint8Array(w * h).fill(GRASS), over: new Uint16Array(w * h), obj: new Uint16Array(w * h), edge: new Uint8Array(w * h), flip: new Uint8Array(w * h) }; }
+function blank(w, h, biome) { return { v: 2, biome: biome || 'grass', w, h, terr: new Uint8Array(w * h).fill(GRASS), over: new Uint16Array(w * h), obj: new Uint16Array(w * h), edge: new Uint8Array(w * h), flip: new Uint8Array(w * h), sc: new Uint8Array(w * h), off: new Int8Array(w * h * 2) }; }
 const inb = (m, x, y) => x >= 0 && y >= 0 && x < m.w && y < m.h;
 // off the map: indoors and underground, nothing (rock, or outside the walls); out of doors the land goes on as it is at
 // the edge, so no cliff rings the map and a river runs on off it (cliffs only where the map itself has void)
@@ -315,8 +323,9 @@ function ownerOf(m, x, y) { if (!m.occ) compute(m); const o = inb(m, x, y) ? m.o
 function drawSprite(c, s, cx, cy, alpha) {
   if (!s || !s.img || !s.img.naturalWidth) return;
   if (alpha != null) c.globalAlpha = alpha;
-  if (s.flip) { c.save(); c.translate(Math.round(cx), 0); c.scale(-1, 1); c.drawImage(s.img, s.x, s.y, s.w, s.h, -Math.round(s.ox), Math.round(cy - s.oy), s.w, s.h); c.restore(); }   // mirrored about the anchor
-  else c.drawImage(s.img, s.x, s.y, s.w, s.h, Math.round(cx - s.ox), Math.round(cy - s.oy), s.w, s.h);
+  const k = s.k || 1; cx += s.dx || 0; cy += s.dy || 0;   // (scaled about its anchor, and nudged)
+  if (s.flip) { c.save(); c.translate(Math.round(cx), 0); c.scale(-1, 1); c.drawImage(s.img, s.x, s.y, s.w, s.h, -Math.round(s.ox * k), Math.round(cy - s.oy * k), Math.round(s.w * k), Math.round(s.h * k)); c.restore(); }   // mirrored about the anchor
+  else c.drawImage(s.img, s.x, s.y, s.w, s.h, Math.round(cx - s.ox * k), Math.round(cy - s.oy * k), Math.round(s.w * k), Math.round(s.h * k));
   if (alpha != null) c.globalAlpha = 1;
 }
 // a wall cut down to a stub: the foot of its faces (between its bottom edges and those edges raised STUB), with its top
@@ -387,7 +396,8 @@ function standing(m, o) {
       if (m.cut && m.cut[i] && (id === m.c[i] || DOOR_IDS.has(id))) continue;   // a stub: nothing to hide behind
       if (s.oy < 30 && !s.prop) continue;    // flat: rubble, grass tufts
       const cx = (x - y) * 32 + ox, cy = (x + y) * 16 + oy;
-      out.push({ id, s, X: x, Y: y, dx: Math.round(s.flip ? cx + s.ox - s.w : cx - s.ox), dy: Math.round(cy - s.oy), w: s.w, h: s.h, flip: !!s.flip });
+      const k = s.k || 1, ax = cx + (s.dx || 0), ay = cy + (s.dy || 0);
+      out.push({ id, s, X: x, Y: y, dx: Math.round(s.flip ? ax + s.ox * k - s.w * k : ax - s.ox * k), dy: Math.round(ay - s.oy * k), w: Math.round(s.w * k), h: Math.round(s.h * k), k, flip: !!s.flip });
     }
   }
   return out;
@@ -1279,7 +1289,7 @@ function extras(m) {
   for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
     const i = y * m.w + x, id = m.vobj[i];
     if (id) {
-      const s = spriteAt(m, i, id), fw = s ? s.fw : 1, fh = s ? s.fh : 1, cx = x - (fw - 1) / 2, cy = y - (fh - 1) / 2;
+      const s = spriteAt(m, i, id), fw = s ? s.fw : 1, fh = s ? s.fh : 1, ndx = s && s.dx ? s.dx / 32 : 0, ndy = s && s.dy ? s.dy / 16 : 0, cx = x - (fw - 1) / 2 + (ndx + ndy) / 2, cy = y - (fh - 1) / 2 + (ndy - ndx) / 2;
       if (s && s.cat === 'Houses') houses.push([x - fw + 1, y - fh + 1, x, y]);
       if (s && s.cat === 'Houses' && !/tower/i.test(s.name || '') && lights.length < 300) lights.push([r2(x + .7), r2(cy), 'window']);   // (a house's lit windows: a glow at its front)
       const k = s && s.cat === 'Lights' ? lightKind(s.name) : id >= 634 && id <= 637 ? 'torch' : null;
@@ -1291,7 +1301,7 @@ function extras(m) {
   }
   return { kind: kindOf(m.biome), lights, houses: houses.slice(0, 400) };
 }
-function pack(m) { const p = { v: 2, biome: m.biome, w: m.w, h: m.h, terr: b64(m.terr), over: b64(new Uint8Array(m.over.buffer.slice(0))), obj: b64(new Uint8Array(m.obj.buffer.slice(0))) }; if (m.edge && m.edge.some(v => v)) p.edge = b64(m.edge); if (m.flip && m.flip.some((v, i) => v && m.obj[i])) p.flip = b64(m.flip); if (m.lv && m.lv.some(v => v)) p.lv = b64(m.lv); try { Object.assign(p, extras(m)); } catch (e) { /* (the sheets' data not loaded: the table works it out later) */ } return p; }
+function pack(m) { const p = { v: 2, biome: m.biome, w: m.w, h: m.h, terr: b64(m.terr), over: b64(new Uint8Array(m.over.buffer.slice(0))), obj: b64(new Uint8Array(m.obj.buffer.slice(0))) }; if (m.edge && m.edge.some(v => v)) p.edge = b64(m.edge); if (m.flip && m.flip.some((v, i) => v && m.obj[i])) p.flip = b64(m.flip); if (m.lv && m.lv.some(v => v)) p.lv = b64(m.lv); if (m.sc && m.sc.some((v, i) => v && m.obj[i])) p.sc = b64(m.sc); if (m.off && m.off.some((v, i) => v && m.obj[i >> 1])) p.off = b64(new Uint8Array(m.off.buffer.slice(0))); try { Object.assign(p, extras(m)); } catch (e) { /* (the sheets' data not loaded: the table works it out later) */ } return p; }
 function unpack(p) {
   if (!p || !(p.w > 0 && p.h > 0 && p.w <= 128 && p.h <= 128)) throw new Error('Not a map from the forge');
   const n = p.w * p.h, d = data();
@@ -1299,9 +1309,9 @@ function unpack(p) {
   if (Array.isArray(p.terr)) {   // the first version kept plain arrays
     for (let i = 0; i < n; i++) { m.terr[i] = Math.min(3, +p.terr[i] || 0); m.over[i] = +p.over[i] || 0; m.obj[i] = +p.obj[i] || 0; }
   } else {
-    const t = unb64(p.terr), ov = new Uint16Array(unb64(p.over).buffer), ob = new Uint16Array(unb64(p.obj).buffer), ed = p.edge ? unb64(p.edge) : null, fl = p.flip ? unb64(p.flip) : null, lv = p.lv ? unb64(p.lv) : null;
+    const t = unb64(p.terr), ov = new Uint16Array(unb64(p.over).buffer), ob = new Uint16Array(unb64(p.obj).buffer), ed = p.edge ? unb64(p.edge) : null, fl = p.flip ? unb64(p.flip) : null, lv = p.lv ? unb64(p.lv) : null, sc = p.sc ? unb64(p.sc) : null, of = p.off ? new Int8Array(unb64(p.off).buffer) : null;
     if (lv && lv.some(v => v)) m.lv = new Uint8Array(n);
-    for (let i = 0; i < n; i++) { m.terr[i] = Math.min(3, t[i] || 0); m.over[i] = ov[i] || 0; m.obj[i] = ob[i] || 0; if (ed) m.edge[i] = ed[i] & 31; if (fl) m.flip[i] = fl[i] & 1; if (m.lv) m.lv[i] = Math.min(3, lv[i] || 0); }
+    for (let i = 0; i < n; i++) { m.terr[i] = Math.min(3, t[i] || 0); m.over[i] = ov[i] || 0; m.obj[i] = ob[i] || 0; if (ed) m.edge[i] = ed[i] & 31; if (fl) m.flip[i] = fl[i] & 1; if (m.lv) m.lv[i] = Math.min(3, lv[i] || 0); if (sc) m.sc[i] = Math.min(250, sc[i] || 0); if (of) { m.off[i * 2] = of[i * 2] || 0; m.off[i * 2 + 1] = of[i * 2 + 1] || 0; } }
   }
   // pieces no land of this sort has (a damaged file) go; pieces only another land of the sort has stay
   const lands = Object.keys(d.biomes).filter(k => kindOf(k) === kindOf(m.biome)), known = id => id >= 1000 ? !!d.props.items[id] : lands.some(k => !!d.biomes[k].tiles[id]);
@@ -1317,5 +1327,5 @@ function rebiome(m, biome) {
 }
 root.IsoCore = { VOID, GRASS, PATH, WATER, NB, PREFABS, GROUND_IDS, THEMES, THEMES_IN, THEMES_INDOOR, themesFor, isInterior, kindOf, standIn, DOORS, DOOR_IDS, data, load, ready, sheets, sprite, has, forBiome, prefabOK,
   blank, inb, tAt, bankKind, fixWater, compute, ownerOf, bridgeAt, paint, drawSprite, bounds, standing, cellXY, cellAt, hash,
-  generate, pack, unpack, rebiome, mirrorOf, mirrored, flipAt, lvAt };
+  generate, pack, unpack, rebiome, mirrorOf, mirrored, flipAt, lvAt, SCALES, spriteAt };
 })(typeof window !== 'undefined' ? window : this);

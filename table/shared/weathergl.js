@@ -37,7 +37,11 @@ uniform float u_veil; uniform float u_ripple; uniform float u_rippleSize; unifor
 uniform vec2 u_windDir; uniform float u_wind; uniform float u_precip;
 uniform float u_aurora; uniform float u_auroraDir;
 float nz(vec2 p) { return texture2D(u_noise, p).r; }
-float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * nz(p); p = p * 2.03 + vec2(0.173, 0.311); a *= 0.5; } return s / 0.9375; }
+// (each octave turned and scaled by an odd amount, so the noise picture's tiling never lines up into a visible repeat)
+const mat2 ROT = mat2(1.6, 1.2, -1.2, 1.6);
+float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * nz(p); p = ROT * p * 1.01 + vec2(0.173, 0.311); a *= 0.5; } return s / 0.9375; }
+// very broad and smooth: two samples on lattices at an angle to each other, for the big, slow variations
+float broad(vec2 p) { return 0.6 * nz(p * 0.37 + 0.11) + 0.4 * nz(mat2(0.8, 0.6, -0.6, 0.8) * p * 0.61 + 0.53); }
 float hash(vec2 p) { p = fract(p * vec2(234.34, 435.345)); p += dot(p, p + 34.23); return fract(p.x * p.y); }
 // cloud masses: broad shapes, billows on them, and a little fine detail
 float cloud(vec2 p) { return fbm(p * 0.38) * 0.55 + fbm(p * 1.3 + 5.0) * 0.3 + fbm(p * 3.9 + 2.0) * 0.15; }
@@ -79,11 +83,12 @@ void main() {
   // lit from the sun's side: brighter where the cloud thins towards the sun
   vec2 lq = cq + u_sun * 0.06;
   float n2 = cloud(lq);
-  float lit = clamp((n - n2) * 7.0 + 0.55, 0.0, 1.0);
+  // (a heavy overcast reads as one sheet, not a field of lit lumps: the relief fades as the cover closes in)
+  float lit = clamp((n - n2) * 7.0 * (1.0 - 0.75 * smoothstep(0.5, 0.92, cov)) + 0.55, 0.0, 1.0);
   // the shadow on the ground: what's overhead a little towards the sun
   vec2 sq = cq + u_sun * 0.14;
   float ns = cloud(sq);
-  float sh = smoothstep(thr - 0.02, thr + 0.3, ns);
+  float sh = mix(smoothstep(thr - 0.02, thr + 0.3, ns), 0.5 + 0.5 * broad(sq * 0.25), smoothstep(0.5, 0.92, cov));
   float P = P0 * (0.8 + 0.4 * smoothstep(thr - 0.1, thr + 0.3, n));
   vec4 col = vec4(0.0);
   // ── the ground: cloud shadow and the gloom under storm cloud
@@ -103,25 +108,28 @@ void main() {
   if (P > 0.005 && u_veil > 0.01) {
     vec2 wd = u_windDir, pr = vec2(dot(w, wd), dot(w, vec2(-wd.y, wd.x)));
     if (snow < 0.5) {
-      // squall lines: long bands across the wind, sweeping along it; within them, fine streaks of falling rain
-      float st = fbm(vec2(pr.x / (u_cs * 0.16) - u_t * 0.02 * (0.4 + u_wind), pr.y / (u_cs * 0.7)) + 0.3);
-      float fine = nz(vec2(pr.x / (u_cs * 0.004) - u_t * 1.6, pr.y / (u_cs * 0.06)));
-      float va = P * u_veil * (0.05 + 0.3 * smoothstep(0.45, 0.85, st)) * (0.55 + 0.9 * smoothstep(0.35, 0.8, fine));
+      // rain seen from above: broad soft curtains drifting with the wind, heavier in squalls, never an even pattern
+      float big = broad(pr / (u_cs * 3.0) + vec2(-u_t * 0.0015 * (0.4 + u_wind), 0.0));
+      float st = fbm(vec2(pr.x / (u_cs * 0.9) - u_t * 0.006 * (0.4 + u_wind), pr.y / (u_cs * 2.2)) + 0.3);
+      float sweep = fbm(vec2(pr.x / (u_cs * 0.22) - u_t * 0.03 * (0.4 + u_wind), pr.y / (u_cs * 0.9)) + 4.1);
+      float va = P * u_veil * (0.04 + 0.22 * smoothstep(0.35, 0.8, st) * (0.6 + 0.4 * smoothstep(0.3, 0.7, big))) * (0.8 + 0.25 * sweep);
       vec3 vc = mix(vec3(0.42, 0.47, 0.56), vec3(0.62, 0.67, 0.75), u_light);
       col = over(vec4(vc, 1.0) * clamp(va, 0.0, 0.7), col);
     } else {
-      float st = fbm((w - u_drift * 1.6) / (u_cs * 0.14) + vec2(0.0, u_t * 0.01));
+      float st = fbm((w - u_drift * 1.6) / (u_cs * 0.8) + vec2(0.0, u_t * 0.004)) * (0.7 + 0.3 * broad(w / (u_cs * 3.0)));
       // (faint, and only in drifts: an even wash read as a tint laid over the land, edged where the snow stops)
-      float va = P * u_veil * 0.16 * smoothstep(0.5, 0.85, st);
+      float va = P * u_veil * 0.16 * smoothstep(0.3, 0.8, st);
       col = over(vec4(mix(vec3(0.7, 0.72, 0.76), vec3(0.97, 0.98, 1.0), u_light), 1.0) * clamp(va, 0.0, 0.3), col);
     }
   }
   // ── fog: a thin, even haze, and long soft banks lying across it, creeping with the wind — the map always shows through
   if (F > 0.005) {
-    vec2 fq = (w - u_drift * 0.2) / (u_cs * 0.5); fq.y *= 2.6;                    // banks: long and low
-    float bank = smoothstep(0.42, 0.78, fbm(fq + vec2(u_t * 0.004, 0.0)));
-    float wisp = fbm((w + u_drift * 0.15) / (u_cs * 0.12) + 3.3);                  // a little texture within them
-    float fa = F * (0.13 + 0.3 * bank * (0.65 + 0.35 * wisp));
+    // the banks are broad (a cell is many screens across up close), and how thick the fog lies varies on a scale broader still
+    vec2 fq = (w - u_drift * 0.2) / (u_cs * 2.4);
+    float thick = smoothstep(0.25, 0.75, broad(fq * 0.5 + 7.0));
+    float bank = smoothstep(0.3, 0.78, fbm(vec2(fq.x, fq.y * 1.7) + vec2(u_t * 0.0025, 0.0)));
+    float soft = fbm(fq * 2.3 + vec2(3.3, -u_t * 0.002));
+    float fa = F * (0.07 + 0.12 * thick + 0.3 * bank * (0.55 + 0.45 * thick) * (0.8 + 0.2 * soft));
     col = over(vec4(mix(vec3(0.45, 0.49, 0.57), vec3(0.93, 0.94, 0.95), u_light), 1.0) * clamp(fa, 0.0, 0.42), col);
   }
   // ── the clouds themselves, over everything (fading as you come down under them)
@@ -130,7 +138,7 @@ void main() {
     vec3 under = mix(vec3(0.66, 0.71, 0.8), vec3(0.3, 0.33, 0.39), dark);
     vec3 cc = mix(under, top, lit * 0.85 + dens * 0.15);
     cc *= mix(vec3(0.18, 0.22, 0.34), vec3(1.0), u_light);
-    float ca = dens * u_cloudVis * (0.42 + 0.28 * cov);
+    float ca = dens * u_cloudVis * (0.42 + 0.28 * cov) * mix(1.0, 0.75 + 0.35 * broad(cq * 0.2 + 2.0), smoothstep(0.5, 0.92, cov));
     col = over(vec4(cc, 1.0) * ca, col);
   }
   // ── lightning: the clouds round the strike lit up from inside

@@ -113,7 +113,7 @@ footer a{color:var(--moss)}
 </aside>
 <main><canvas id="cv"></canvas>
   <div class="hud"><button class="btn" id="zout" aria-label="Zoom out">−</button><button class="btn" id="zin" aria-label="Zoom in">+</button><button class="btn" id="fit">Fit</button><button class="btn" id="grid">Grid</button><button class="btn" id="walls" hidden title="Walls in front of a floor: cut down to see in, or at full height">Full walls</button></div>
-  <div class="tip" id="tip">Drag to paint · right-drag or Space to pan · wheel to zoom · [ ] brush size · Ctrl+Z undo</div>
+  <div class="tip" id="tip">Drag to paint · right-drag or Space to pan · wheel to zoom · Ctrl+wheel to size an object · hold Alt to place or move it off the grid · [ ] brush size · Ctrl+Z undo</div>
 </main>
 <footer><span id="status">Loading tiles…</span><span class="grow"></span><details id="credwrap"><summary>Art credits</summary><div id="credits"></div></details></footer>
 <div id="toast" role="status"></div>
@@ -133,10 +133,10 @@ let m = C.blank(36, 36, 'grass');
 
 // ───── undo
 let undo = [], redo = [];
-const snap = () => ({ w: m.w, h: m.h, biome: m.biome, terr: m.terr.slice(), over: m.over.slice(), obj: m.obj.slice(), edge: (m.edge || new Uint8Array(m.w * m.h)).slice(), flip: (m.flip || new Uint8Array(m.w * m.h)).slice(), lv: m.lv ? m.lv.slice() : null });
-function restore(s) { m = Object.assign(C.blank(s.w, s.h, s.biome), { terr: s.terr.slice(), over: s.over.slice(), obj: s.obj.slice(), edge: s.edge.slice(), flip: s.flip.slice(), lv: s.lv ? s.lv.slice() : undefined }); sel = null; C.compute(m); syncLand(); buildPalette(); buildThemes(); draw(); autosave(); btns(); }
+const snap = () => ({ w: m.w, h: m.h, biome: m.biome, terr: m.terr.slice(), over: m.over.slice(), obj: m.obj.slice(), edge: (m.edge || new Uint8Array(m.w * m.h)).slice(), flip: (m.flip || new Uint8Array(m.w * m.h)).slice(), sc: (m.sc || new Uint8Array(m.w * m.h)).slice(), off: (m.off || new Int8Array(m.w * m.h * 2)).slice(), lv: m.lv ? m.lv.slice() : null });
+function restore(s) { m = Object.assign(C.blank(s.w, s.h, s.biome), { terr: s.terr.slice(), over: s.over.slice(), obj: s.obj.slice(), edge: s.edge.slice(), flip: s.flip.slice(), sc: s.sc.slice(), off: s.off.slice(), lv: s.lv ? s.lv.slice() : undefined }); sel = null; C.compute(m); syncLand(); buildPalette(); buildThemes(); draw(); autosave(); btns(); }
 // (a wall drag starts again from the map as it was when the drag began, so its line can shorten or turn)
-function restoreLast() { const s = undo[undo.length - 1]; if (!s) return; m.terr.set(s.terr); m.edge.set(s.edge); m.over.set(s.over); m.obj.set(s.obj); m.flip.set(s.flip); m.lv = s.lv ? s.lv.slice() : undefined; }
+function restoreLast() { const s = undo[undo.length - 1]; if (!s) return; m.terr.set(s.terr); m.edge.set(s.edge); m.over.set(s.over); m.obj.set(s.obj); m.flip.set(s.flip); m.sc.set(s.sc); m.off.set(s.off); m.lv = s.lv ? s.lv.slice() : undefined; }
 function push() { undo.push(snap()); if (undo.length > 60) undo.shift(); redo = []; btns(); }
 function btns() { $('#undo').disabled = !undo.length; $('#redo').disabled = !redo.length; }
 $('#undo').onclick = () => { if (!undo.length) return; redo.push(snap()); restore(undo.pop()); };
@@ -169,7 +169,15 @@ function pieceAt(x, y) {
   const o = C.ownerOf(m, x, y); if (o) return { layer: 'obj', x: o[0], y: o[1] };
   return m.over[y * m.w + x] && !(m.over[y * m.w + x] >= 192 && m.over[y * m.w + x] < 200) ? { layer: 'over', x, y } : null;   // (not a bridge's own pieces)
 }
-const pieceSprite = p => { const i = p.y * m.w + p.x; return p.layer === 'obj' ? (m.flip && m.flip[i] ? C.mirrored(C.sprite(m.biome, m.vobj[i] || m.obj[i])) : C.sprite(m.biome, m.vobj[i] || m.obj[i])) : C.sprite(m.biome, m.over[i]); };
+const pieceSprite = p => { const i = p.y * m.w + p.x; return p.layer === 'obj' ? C.spriteAt(m, i, m.vobj[i] || m.obj[i]) : C.sprite(m.biome, m.over[i]); };
+// a piece's size (m.sc: 0 as drawn, else a percentage) and nudge off its cell's centre (m.off: screen pixels), cleared with it
+const unpose = i => { m.flip[i] = 0; m.sc[i] = 0; m.off[i * 2] = 0; m.off[i * 2 + 1] = 0; };
+const pose = i => [m.flip[i], m.sc[i], m.off[i * 2], m.off[i * 2 + 1]];
+const setPose = (i, [f, k, dx, dy]) => { m.flip[i] = f; m.sc[i] = k; m.off[i * 2] = dx; m.off[i * 2 + 1] = dy; };
+// the world point to its cell, and what's left over (clamped to a byte): for Alt placing, off the grid
+const cellOfW = (wx, wy) => [Math.floor((wx / 32 + (wy - 16) / 16 + 1) / 2), Math.floor(((wy - 16) / 16 + 1 - wx / 32) / 2)];
+const nudge = (wx, wy, x, y) => { const [cx, cy] = cellXY(x, y), cl = v => Math.max(-127, Math.min(127, Math.round(v))); return [cl(wx - cx), cl(wy - cy)]; };
+let brushScale = 0, altDown = false, hoverW = null;   // (the brush's size, 0 as drawn; Alt held; the pointer in the world)
 function outline(p, col, at) {
   const s = pieceSprite(p), fw = s ? s.fw : 1, fh = s ? s.fh : 1, [x, y] = at || [p.x, p.y];
   ctx.save(); ctx.lineWidth = 2.5 / cam.z; ctx.strokeStyle = col; ctx.fillStyle = col.replace(/[\d.]+\)$/, '.14)');
@@ -179,10 +187,11 @@ function outline(p, col, at) {
 function selection() {
   const si = sel.y * m.w + sel.x; if (!C.inb(m, sel.x, sel.y) || !(sel.layer === 'obj' ? m.obj[si] : m.over[si])) { sel = null; return; }
   outline(sel, 'rgba(240,195,106,1)');
-  if (drag && drag.to && (drag.to[0] !== sel.x || drag.to[1] !== sel.y)) { const [cx, cy] = cellXY(drag.to[0], drag.to[1]); C.drawSprite(ctx, pieceSprite(sel), cx, cy, .6); outline(sel, fits(sel, drag.to) ? 'rgba(205,232,138,1)' : 'rgba(255,122,106,1)', drag.to); }
+  if (drag && drag.free && drag.at) { const s = Object.assign({}, pieceSprite(sel), { dx: drag.at[2], dy: drag.at[3] }), [cx, cy] = cellXY(drag.at[0], drag.at[1]); C.drawSprite(ctx, s, cx, cy, .6); outline(sel, fits(sel, drag.at) ? 'rgba(205,232,138,1)' : 'rgba(255,122,106,1)', drag.at); }
+  else if (drag && drag.to && (drag.to[0] !== sel.x || drag.to[1] !== sel.y)) { const [cx, cy] = cellXY(drag.to[0], drag.to[1]); C.drawSprite(ctx, pieceSprite(sel), cx, cy, .6); outline(sel, fits(sel, drag.to) ? 'rgba(205,232,138,1)' : 'rgba(255,122,106,1)', drag.to); }
 }
 // the brush as it will be laid: mirrored if it's been flipped (and has no turned twin)
-const brushSprite = () => { const s = C.sprite(m.biome, tool.id); return tool.kind === 'obj' && brushFlip ? C.mirrored(s) : s; };
+const brushSprite = () => { let s = C.sprite(m.biome, tool.id); if (tool.kind === 'obj' && brushFlip) s = C.mirrored(s); return tool.kind === 'obj' && s && brushScale ? Object.assign({}, s, { k: brushScale / 100 }) : s; };
 function brushCells(x, y) { const r = brush - 1, out = []; for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (Math.abs(dx) + Math.abs(dy) <= r + (r > 1 ? 1 : 0) && C.inb(m, x + dx, y + dy)) out.push([x + dx, y + dy]); return out; }
 function ghost() {
   const [x, y] = hover;
@@ -192,7 +201,9 @@ function ghost() {
   if (tool.kind === 'terrain' || tool.kind === 'erase' || tool.kind === 'raise' || tool.kind === 'lower') { for (const [a, b] of brushCells(x, y)) { diamond(ctx, a, b); ctx.fill(); ctx.stroke(); } return; }
   if (tool.kind === 'select' || tool.kind === 'pipette') { const h = pieceAt(x, y); if (h && !(sel && drag)) outline(h, tool.kind === 'pipette' ? 'rgba(159,208,255,.9)' : 'rgba(240,195,106,.6)'); diamond(ctx, x, y); ctx.stroke(); return; }
   if (tool.kind === 'obj' || tool.kind === 'groundpiece') {
-    const s = brushSprite(); const [cx, cy] = cellXY(x, y); C.drawSprite(ctx, s, cx, cy, .72);
+    let s = brushSprite(); const [cx, cy] = cellXY(x, y);
+    if (tool.kind === 'obj' && altDown && hoverW && s) { const [dx, dy] = nudge(hoverW[0], hoverW[1], x, y); s = Object.assign({}, s, { dx, dy }); }
+    C.drawSprite(ctx, s, cx, cy, .72);
     if (s) for (let j = 0; j < s.fh; j++) for (let k = 0; k < s.fw; k++) { diamond(ctx, x - k, y - j); ctx.stroke(); }
     return;
   }
@@ -305,8 +316,8 @@ $('#search').oninput = () => buildPalette();
 $('#bsize').oninput = e => { brush = +e.target.value; $('#bsizev').textContent = brush; redraw(); };
 
 function clearAt(a, b) {   // whatever covers this cell (a whole house, if it's one of a house's cells)
-  const o = C.ownerOf(m, a, b); if (o) { m.obj[o[1] * m.w + o[0]] = 0; m.flip[o[1] * m.w + o[0]] = 0; }
-  m.obj[b * m.w + a] = 0; m.flip[b * m.w + a] = 0; m.over[b * m.w + a] = 0; C.compute(m);
+  const o = C.ownerOf(m, a, b); if (o) { m.obj[o[1] * m.w + o[0]] = 0; unpose(o[1] * m.w + o[0]); }
+  m.obj[b * m.w + a] = 0; unpose(b * m.w + a); m.over[b * m.w + a] = 0; C.compute(m);
 }
 // the edge nearest a point given in cells: ['W', x, y] (the line towards x - 1) or ['N', x, y] (towards y - 1)
 function edgeAt([fx, fy]) {
@@ -354,7 +365,7 @@ function underTool(x, y, first) {
   if (!list.length) { toast('This land has no archways'); return; }
   if (!fl(x, y)) { m.terr[I(x, y)] = GRASS; m.edge[I(x, y)] = 0; }
   if (at < 0) clearAt(x, y);
-  m.obj[I(x, y)] = at < 0 ? list[0] : at + 1 < list.length ? list[at + 1] : 0; if (m.flip) m.flip[I(x, y)] = 0;
+  m.obj[I(x, y)] = at < 0 ? list[0] : at + 1 < list.length ? list[at + 1] : 0; unpose(I(x, y));
 }
 function applyAt(x, y, first) {
   if (!C.inb(m, x, y)) return;
@@ -368,7 +379,7 @@ function applyAt(x, y, first) {
     if (big && !first) return;
     if (first || !m.obj[I(x, y)]) {
       if (big) for (let j = 0; j < s.fh; j++) for (let q = 0; q < s.fw; q++) if (C.inb(m, x - q, y - j)) clearAt(x - q, y - j);
-      m.obj[I(x, y)] = tool.id; m.flip[I(x, y)] = brushFlip;
+      m.obj[I(x, y)] = tool.id; const [dx, dy] = first && altDown && hoverW ? nudge(hoverW[0], hoverW[1], x, y) : [0, 0]; setPose(I(x, y), [brushFlip, brushScale, dx, dy]);
     }
   }
   else if (k === 'groundpiece') m.over[I(x, y)] = tool.id;
@@ -380,7 +391,7 @@ function applyAt(x, y, first) {
     for (const [a, b] of brushCells(x, y)) if (m.terr[I(a, b)] !== VOID) m.lv[I(a, b)] = strokeLv;
   }
   else if (k === 'bridge' && first) { if (!C.bridgeAt(m, x, y)) toast('Click water with land straight across on both sides'); }
-  else if (k === 'pipette' && first) { const o = C.ownerOf(m, x, y), id = o ? m.obj[I(o[0], o[1])] : m.over[I(x, y)]; if (id) { const t = { kind: o ? 'obj' : 'groundpiece', id }; select(t); brushFlip = o && m.flip ? m.flip[I(o[0], o[1])] : 0; markBrush(); toast('Took it as your brush: click to place'); } }
+  else if (k === 'pipette' && first) { const o = C.ownerOf(m, x, y), id = o ? m.obj[I(o[0], o[1])] : m.over[I(x, y)]; if (id) { const t = { kind: o ? 'obj' : 'groundpiece', id }; select(t); brushFlip = o && m.flip ? m.flip[I(o[0], o[1])] : 0; brushScale = o ? m.sc[I(o[0], o[1])] : 0; markBrush(); toast('Took it as your brush: click to place'); } }
   C.compute(m); redraw();
 }
 
@@ -397,15 +408,21 @@ cv.addEventListener('pointerdown', e => {
   if (e.button === 2 || e.button === 1 || spaceDown || tool.kind === 'pan') { mode = 'pan'; last = [e.clientX, e.clientY]; cv.classList.add('panning'); return; }
   if (e.button !== 0) return;
   if (tool.kind === 'pipette') { const c = toCell(e.clientX, e.clientY); applyAt(c[0], c[1], true); return; }
-  if (tool.kind === 'select') { const c = toCell(e.clientX, e.clientY), p = pieceAt(c[0], c[1]); sel = p; drag = p ? { from: c, to: [p.x, p.y] } : null; mode = p ? 'move' : null; redraw(); return; }
+  if (tool.kind === 'select') { const c = toCell(e.clientX, e.clientY), p = pieceAt(c[0], c[1]); sel = p; drag = p ? { from: c, to: [p.x, p.y], fromW: toWorld(e.clientX, e.clientY), free: e.altKey && p.layer === 'obj' } : null; mode = p ? 'move' : null; redraw(); return; }
   mode = 'paint'; push(); hoverF = toCellF(e.clientX, e.clientY); lastEdge = Math.floor(hoverF[0]) + ',' + Math.floor(hoverF[1]); lastCell = toCell(e.clientX, e.clientY); applyAt(lastCell[0], lastCell[1], true);
 });
 cv.addEventListener('pointermove', e => {
   if (pts.has(e.pointerId)) pts.set(e.pointerId, [e.clientX, e.clientY]);
   if (mode === 'pinch' && pts.size === 2) { const [a, b] = [...pts.values()]; cam.z = Math.max(.25, Math.min(3, pinch.z * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch.d)); redraw(); return; }
   if (mode === 'pan') { cam.x -= (e.clientX - last[0]) / cam.z; cam.y -= (e.clientY - last[1]) / cam.z; last = [e.clientX, e.clientY]; redraw(); return; }
-  const c = toCell(e.clientX, e.clientY); hover = c; hoverF = toCellF(e.clientX, e.clientY);
-  if (mode === 'move' && drag) drag.to = [sel.x + c[0] - drag.from[0], sel.y + c[1] - drag.from[1]];
+  const c = toCell(e.clientX, e.clientY); hover = c; hoverF = toCellF(e.clientX, e.clientY); hoverW = toWorld(e.clientX, e.clientY); altDown = e.altKey;
+  if (mode === 'move' && drag) {
+    drag.to = [sel.x + c[0] - drag.from[0], sel.y + c[1] - drag.from[1]];
+    if (drag.free || e.altKey) {   // (Alt: off the grid. Its anchor where the pointer has carried it: the cell under that, and the rest as a nudge)
+      drag.free = true; const i = sel.y * m.w + sel.x, [ax, ay] = cellXY(sel.x, sel.y), wx = ax + m.off[i * 2] + hoverW[0] - drag.fromW[0], wy = ay + m.off[i * 2 + 1] + hoverW[1] - drag.fromW[1], [tx, ty] = cellOfW(wx, wy);
+      drag.at = [tx, ty, ...nudge(wx, wy, tx, ty)];
+    }
+  }
   if (mode === 'paint' && tool.kind === 'wall' && !indoor() && (c[0] !== lastCell[0] || c[1] !== lastCell[1])) { lastCell = c; restoreLast(); applyAt(c[0], c[1], false); }
   else if (mode === 'paint' && (tool.kind === 'wall' || tool.kind === 'door') && indoor()) { const ek = Math.floor(hoverF[0]) + ',' + Math.floor(hoverF[1]); if (ek !== lastEdge) { lastEdge = ek; applyAt(c[0], c[1], false); } }
   if (mode === 'paint' && (c[0] !== lastCell[0] || c[1] !== lastCell[1]) && ['terrain', 'erase', 'obj', 'groundpiece', 'raise', 'lower'].includes(tool.kind)) { lastCell = c; applyAt(c[0], c[1], false); }
@@ -413,14 +430,26 @@ cv.addEventListener('pointermove', e => {
 });
 function end(e) {
   pts.delete(e.pointerId);
-  if (mode === 'move' && drag) { const to = drag.to; drag = null; if (to && (to[0] !== sel.x || to[1] !== sel.y)) { if (fits(sel, to)) moveSel(to); else toast('It won\'t fit there'); } }
+  if (mode === 'move' && drag && drag.free && drag.at) { const at = drag.at; drag = null; if (fits(sel, at)) moveSel(at.slice(0, 2), at.slice(2)); else toast('It won\'t fit there'); }
+  else if (mode === 'move' && drag) { const to = drag.to; drag = null; if (to && (to[0] !== sel.x || to[1] !== sel.y)) { if (fits(sel, to)) moveSel(to); else toast('It won\'t fit there'); } }
   if (mode === 'paint') { if (tool.kind === 'terrain') { C.fixWater(m); C.compute(m); } autosave(); }
   if (pts.size === 0) { mode = null; cv.classList.remove('panning'); }
   redraw();
 }
 cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
 cv.addEventListener('pointerleave', () => { hover = null; redraw(); });
-cv.addEventListener('wheel', e => { e.preventDefault(); const before = toWorld(e.clientX, e.clientY); cam.z = Math.max(.25, Math.min(3, cam.z * Math.exp(-e.deltaY * .0015))); const after = toWorld(e.clientX, e.clientY); cam.x += before[0] - after[0]; cam.y += before[1] - after[1]; redraw(); }, { passive: false });
+// Ctrl+wheel: the size of the selected piece (Select), of the brush (an object), or else of the piece under the pointer
+function scaleBy(dir) {
+  const S = C.SCALES, step = v => { const j = S.indexOf(v || 100); return S[Math.max(0, Math.min(S.length - 1, (j < 0 ? S.indexOf(100) : j) + dir))]; };
+  if (tool.kind === 'obj') { const v = step(brushScale); brushScale = v === 100 ? 0 : v; toast('Size ' + v + '%'); redraw(); return; }
+  const p = tool.kind === 'select' && sel ? sel : hover ? pieceAt(hover[0], hover[1]) : null;
+  if (!p || p.layer !== 'obj') { toast('Ctrl+wheel sizes an object: select one, or pick one to place'); return; }
+  const i = p.y * m.w + p.x, v = step(m.sc[i]); if ((m.sc[i] || 100) === v) return;
+  push(); m.sc[i] = v === 100 ? 0 : v; C.compute(m); autosave(); toast('Size ' + v + '%'); redraw();
+}
+let wheelT = 0;
+cv.addEventListener('wheel', e => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); const now = Date.now(); if (now - wheelT > 90) { wheelT = now; scaleBy(e.deltaY < 0 ? 1 : -1); } return; } });
+cv.addEventListener('wheel', e => { if (e.ctrlKey || e.metaKey) return; e.preventDefault(); const before = toWorld(e.clientX, e.clientY); cam.z = Math.max(.25, Math.min(3, cam.z * Math.exp(-e.deltaY * .0015))); const after = toWorld(e.clientX, e.clientY); cam.x += before[0] - after[0]; cam.y += before[1] - after[1]; redraw(); }, { passive: false });
 const zoomBy = f => { cam.z = Math.max(.25, Math.min(3, cam.z * f)); redraw(); };
 $('#zin').onclick = () => zoomBy(1.25); $('#zout').onclick = () => zoomBy(.8);
 function fit() { const r = cv.getBoundingClientRect(); const mw = (m.w + m.h) * 32, mh = (m.w + m.h) * 16 + 120; cam.x = (m.w - m.h) * 16; cam.y = (m.w + m.h) * 8 - 40; cam.z = Math.max(.25, Math.min(1.4, Math.min(r.width / mw, r.height / mh) * .95)); redraw(); }
@@ -433,12 +462,14 @@ addEventListener('keydown', e => {
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); $('#redo').click(); }
   else if (e.key === '[' || e.key === ']') { brush = Math.max(1, Math.min(7, brush + (e.key === ']' ? 1 : -1))); $('#bsize').value = brush; $('#bsizev').textContent = brush; redraw(); }
   else if (e.code === 'Space') { spaceDown = true; cv.classList.add('pan'); e.preventDefault(); }
-  else if ((e.key === 'Delete' || e.key === 'Backspace') && sel && tool.kind === 'select') { e.preventDefault(); push(); const i = sel.y * m.w + sel.x; if (sel.layer === 'obj') { m.obj[i] = 0; m.flip[i] = 0; } else m.over[i] = 0; sel = null; C.compute(m); autosave(); redraw(); }
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && sel && tool.kind === 'select') { e.preventDefault(); push(); const i = sel.y * m.w + sel.x; if (sel.layer === 'obj') { m.obj[i] = 0; unpose(i); } else m.over[i] = 0; sel = null; C.compute(m); autosave(); redraw(); }
   else if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey) flip();
   else if (e.key === 'Escape' && sel) { sel = null; drag = null; redraw(); }
   else if (e.key === 'Escape' && EMBED) $('#close').click();
 });
-addEventListener('keyup', e => { if (e.code === 'Space') { spaceDown = false; cv.classList.toggle('pan', tool.kind === 'pan'); } });
+addEventListener('keydown', e => { if (e.key === 'Alt') { e.preventDefault(); altDown = true; redraw(); } });
+addEventListener('keyup', e => { if (e.key === 'Alt') { e.preventDefault(); altDown = false; redraw(); }
+  if (e.code === 'Space') { spaceDown = false; cv.classList.toggle('pan', tool.kind === 'pan'); } });
 addEventListener('resize', redraw);
 // would the selected piece fit with its front cell at (x, y)? (on the map; only over cells it covers now or that are clear
 // of other objects; an object on the floor, not off it)
@@ -450,9 +481,9 @@ function fits(p, [x, y]) {
   }
   return true;
 }
-function moveSel([x, y]) {
+function moveSel([x, y], off) {
   push(); const i = sel.y * m.w + sel.x, n = y * m.w + x;
-  if (sel.layer === 'obj') { const id = m.obj[i], f = m.flip[i]; m.obj[i] = 0; m.flip[i] = 0; m.obj[n] = id; m.flip[n] = f; }
+  if (sel.layer === 'obj') { const id = m.obj[i], ps = pose(i); m.obj[i] = 0; unpose(i); if (off) { ps[2] = off[0]; ps[3] = off[1]; } m.obj[n] = id; setPose(n, ps); }
   else { const id = m.over[i]; m.over[i] = 0; m.over[n] = id; }
   sel = { layer: sel.layer, x, y }; C.compute(m); autosave(); redraw();
 }
